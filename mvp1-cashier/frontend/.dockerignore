@@ -1,0 +1,44 @@
+# DomOS Frontend - Docker Ignore
+
+# Dependencies
+node_modules/
+.npm/
+
+# Build output (we build inside container)
+dist/
+build/
+
+# Test files
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Misc
+*.log
+*.tmp
+.DS_Store
+
+# Storybook
+.storybook/
+storybook-static/

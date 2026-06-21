@@ -1,0 +1,26 @@
+# DomOS Cashier MVP - Dependencies
+# Updated for Python 3.13 compatibility
+
+# FastAPI and server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.17
+
+# Database
+sqlalchemy>=2.0.36
+psycopg2-binary>=2.9.9
+psycopg[binary]>=3.2.3
+alembic>=1.14.0
+
+# Validation and settings - updated for Python 3.13
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
+
+# Development
+pytest>=8.3.0
+httpx>=0.28.0

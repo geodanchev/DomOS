@@ -1,0 +1,178 @@
+# DomOS Cashier MVP - Production Docker Compose with HTTPS (Traefik)
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+# 1. Set your domain in .env: DOMAIN=yourdomain.com
+# 2. Set your email in .env: ACME_EMAIL=admin@yourdomain.com
+# 3. Point your domain DNS to this server's IP
+# 4. Open ports 80 and 443 on your firewall
+
+services:
+  # Traefik Reverse Proxy with automatic HTTPS
+  traefik:
+    image: traefik:v3.0
+    container_name: domos-traefik
+    restart: unless-stopped
+    command:
+      # API and Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      # Providers
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=domos-network-prod"
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # HTTP to HTTPS redirect
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Let's Encrypt
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # Uncomment for staging/testing (avoid rate limits)
+      # - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - domos-network-prod
+    labels:
+      # Dashboard (optional - access at https://traefik.yourdomain.com)
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      # Dashboard auth (generate with: htpasswd -nb admin password)
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:$$apr1$$ruca84Hq$$mbjdMZBAG.KWn7vfN/SNK/}"
+
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: domos-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-domos_cashier}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-domos_cashier}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - domos-network-prod
+    # Database not exposed externally for security
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: domos-backend-prod
+    restart: unless-stopped
+    environment:
+      APP_NAME: "DomOS Cashier"
+      APP_VERSION: "1.0.0"
+      DEBUG: "false"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-domos_cashier}
+      SECRET_KEY: ${SECRET_KEY:?Secret key required}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      ALGORITHM: HS256
+      CORS_ORIGINS: '["https://${DOMAIN:-localhost}","https://www.${DOMAIN:-localhost}"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - domos-network-prod
+    labels:
+      - "traefik.enable=true"
+      # API routes
+      - "traefik.http.routers.backend.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      # Health endpoint
+      - "traefik.http.routers.backend-health.rule=Host(`${DOMAIN:-localhost}`) && Path(`/health`)"
+      - "traefik.http.routers.backend-health.entrypoints=websecure"
+      - "traefik.http.routers.backend-health.tls.certresolver=letsencrypt"
+      # API Docs (optional - remove in production if not needed)
+      - "traefik.http.routers.backend-docs.rule=Host(`${DOMAIN:-localhost}`) && (PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`))"
+      - "traefik.http.routers.backend-docs.entrypoints=websecure"
+      - "traefik.http.routers.backend-docs.tls.certresolver=letsencrypt"
+
+  # React Frontend (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: domos-frontend-prod
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - domos-network-prod
+    labels:
+      - "traefik.enable=true"
+      # Main frontend routes
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      # Priority - frontend has lower priority than backend API routes
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.backend.priority=2"
+      # WWW redirect (optional)
+      - "traefik.http.routers.frontend-www.rule=Host(`www.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.frontend-www.entrypoints=websecure"
+      - "traefik.http.routers.frontend-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend-www.middlewares=www-redirect"
+      - "traefik.http.middlewares.www-redirect.redirectregex.regex=^https://www\\.(.+)"
+      - "traefik.http.middlewares.www-redirect.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.www-redirect.redirectregex.permanent=true"
+      # Security headers
+      - "traefik.http.routers.frontend.middlewares=security-headers"
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+
+# Persistent volumes
+volumes:
+  postgres_data_prod:
+    driver: local
+  traefik_letsencrypt:
+    driver: local
+
+# Network configuration
+networks:
+  domos-network-prod:
+    driver: bridge
