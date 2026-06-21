@@ -1,14 +1,20 @@
-"""Payments API endpoints - плащания."""
+"""Payments API endpoints - плащания.
+
+Актуализирано за account-based система.
+При плащане се добавя кредит към сметката на апартамента.
+"""
 
 from datetime import date
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.db.session import get_db
 from app.models.apartment import Apartment
 from app.models.payment import Payment
-from app.models.monthly_charge import MonthlyCharge, ChargeStatus
+from app.models.obligation import Obligation
+from app.models.account import ApartmentAccount, AccountTransaction, TransactionType, TransactionReference
 from app.models.user import User
 from app.schemas.payment import (
     PaymentCreate, 
@@ -21,6 +27,61 @@ from app.schemas.payment import (
 from app.api.auth import get_current_user
 
 router = APIRouter()
+
+
+def get_or_create_account(db: Session, apartment_id: int) -> ApartmentAccount:
+    """Get or create account for apartment."""
+    account = db.query(ApartmentAccount).filter(
+        ApartmentAccount.apartment_id == apartment_id
+    ).first()
+    
+    if not account:
+        # Calculate initial balance from existing data
+        total_payments = db.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == apartment_id
+        ).scalar() or Decimal("0")
+        
+        total_obligations = db.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == apartment_id
+        ).scalar() or Decimal("0")
+        
+        balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
+        
+        account = ApartmentAccount(
+            apartment_id=apartment_id,
+            balance=balance
+        )
+        db.add(account)
+        db.flush()
+    
+    return account
+
+
+def add_credit_to_account(
+    db: Session, 
+    account: ApartmentAccount, 
+    amount: Decimal,
+    payment_id: int,
+    description: str | None = None
+) -> AccountTransaction:
+    """Add credit to account and create transaction record."""
+    # Update balance
+    new_balance = Decimal(str(account.balance)) + amount
+    account.balance = new_balance
+    
+    # Create transaction record
+    transaction = AccountTransaction(
+        account_id=account.id,
+        type=TransactionType.CREDIT,
+        amount=amount,
+        reference_type=TransactionReference.PAYMENT,
+        reference_id=payment_id,
+        balance_after=new_balance,
+        description=description or f"Плащане #{payment_id}"
+    )
+    db.add(transaction)
+    
+    return transaction
 
 
 @router.get("", response_model=PaymentList)
@@ -68,7 +129,7 @@ async def get_apartment_payment_summary(
     Returns:
         - Apartment info
         - Last 3 payments
-        - Current balance (positive = owes, negative = overpaid)
+        - Current balance from account
     """
     # Verify apartment exists
     apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
@@ -77,6 +138,10 @@ async def get_apartment_payment_summary(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Апартаментът не е намерен",
         )
+    
+    # Get or create account
+    account = get_or_create_account(db, apartment_id)
+    db.commit()
     
     # Get last 3 payments
     recent_payments = (
@@ -87,16 +152,14 @@ async def get_apartment_payment_summary(
         .all()
     )
     
-    # Calculate totals from monthly charges
-    charges = db.query(MonthlyCharge).filter(
-        MonthlyCharge.apartment_id == apartment_id
-    ).all()
+    # Calculate totals
+    total_payments = db.query(func.sum(Payment.amount)).filter(
+        Payment.apartment_id == apartment_id
+    ).scalar() or Decimal("0")
     
-    total_due = sum(float(c.amount_due) for c in charges)
-    total_paid = sum(float(c.amount_paid) for c in charges)
-    
-    # Current balance: positive = owes money, negative = overpaid
-    current_balance = total_due - total_paid
+    total_obligations = db.query(func.sum(Obligation.amount)).filter(
+        Obligation.apartment_id == apartment_id
+    ).scalar() or Decimal("0")
     
     return ApartmentPaymentSummary(
         apartment_id=apartment.id,
@@ -112,9 +175,9 @@ async def get_apartment_payment_summary(
             )
             for p in recent_payments
         ],
-        current_balance=current_balance,
-        total_due=total_due,
-        total_paid=total_paid,
+        balance=float(account.balance),
+        total_obligations=float(total_obligations),
+        total_payments=float(total_payments),
     )
 
 
@@ -126,7 +189,8 @@ async def create_payment(
 ):
     """Record a new payment.
     
-    This is the main action for Цецка - recording payments from residents.
+    This is the main action for the cashier - recording payments from residents.
+    The payment adds credit to the apartment's account.
     """
     # Verify apartment exists
     apartment = db.query(Apartment).filter(Apartment.id == data.apartment_id).first()
@@ -148,16 +212,17 @@ async def create_payment(
     )
     
     db.add(payment)
+    db.flush()  # Get payment ID
     
-    # Update monthly charge if exists
-    charge = db.query(MonthlyCharge).filter(
-        MonthlyCharge.apartment_id == data.apartment_id,
-        MonthlyCharge.month == data.month,
-    ).first()
-    
-    if charge:
-        charge.amount_paid = float(charge.amount_paid) + data.amount
-        charge.update_status()
+    # Get or create account and add credit
+    account = get_or_create_account(db, data.apartment_id)
+    add_credit_to_account(
+        db=db,
+        account=account,
+        amount=Decimal(str(data.amount)),
+        payment_id=payment.id,
+        description=f"Плащане за {data.month}" if data.month else None
+    )
     
     db.commit()
     db.refresh(payment)
@@ -196,54 +261,30 @@ async def get_payment(
 
 
 @router.get("/{payment_id}/receipt", response_model=ReceiptData)
-async def get_receipt(
+async def get_payment_receipt(
     payment_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get receipt data for printing.
-    
-    Returns data formatted for thermal printer.
-    """
+    """Get receipt data for a payment."""
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if not payment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Плащането не е намерено",
         )
+    
+    apartment = payment.apartment
     
     return ReceiptData(
-        apartment_number=payment.apartment.number if payment.apartment else "?",
-        amount=float(payment.amount),
-        month=payment.month,
+        receipt_number=f"R-{payment.id:06d}",
+        payment_id=payment.id,
         payment_date=payment.payment_date,
-        receipt_number=payment.id,
+        amount=float(payment.amount),
+        payment_method=payment.payment_method,
+        apartment_number=apartment.number if apartment else "N/A",
+        owner_name=apartment.owner_name if apartment else "N/A",
+        month=payment.month,
+        collected_by=payment.collected_by.display_name if payment.collected_by else "N/A",
+        notes=payment.notes,
     )
-
-
-@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_payment(
-    payment_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Delete a payment (admin only, use with caution)."""
-    payment = db.query(Payment).filter(Payment.id == payment_id).first()
-    if not payment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Плащането не е намерено",
-        )
-    
-    # Update monthly charge
-    charge = db.query(MonthlyCharge).filter(
-        MonthlyCharge.apartment_id == payment.apartment_id,
-        MonthlyCharge.month == payment.month,
-    ).first()
-    
-    if charge:
-        charge.amount_paid = max(0, float(charge.amount_paid) - float(payment.amount))
-        charge.update_status()
-    
-    db.delete(payment)
-    db.commit()

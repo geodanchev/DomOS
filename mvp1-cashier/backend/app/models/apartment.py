@@ -1,14 +1,21 @@
-"""Apartment model - домова книга."""
+"""Apartment model - домова книга.
+
+Актуализирано: Account-based система.
+- Добавена връзка към ApartmentAccount (1:1)
+- Задълженията се управляват чрез Obligation модел
+- Балансът се следи чрез ApartmentAccount
+"""
 
 from sqlalchemy import String, Integer, Numeric, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from app.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.payment import Payment
-    from app.models.monthly_charge import MonthlyCharge
+    from app.models.obligation import Obligation
+    from app.models.account import ApartmentAccount
 
 
 class Apartment(Base, TimestampMixin):
@@ -74,8 +81,16 @@ class Apartment(Base, TimestampMixin):
         cascade="all, delete-orphan"
     )
     
-    monthly_charges: Mapped[list["MonthlyCharge"]] = relationship(
+    # Унифицирани задължения
+    obligations: Mapped[list["Obligation"]] = relationship(
         back_populates="apartment",
+        cascade="all, delete-orphan"
+    )
+    
+    # Сметка на апартамента (1:1)
+    account: Mapped[Optional["ApartmentAccount"]] = relationship(
+        back_populates="apartment",
+        uselist=False,
         cascade="all, delete-orphan"
     )
     

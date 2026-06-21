@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 interface NewPaymentDialogProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { toast } = useToast();
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [selectedApartmentId, setSelectedApartmentId] = useState<string>('');
   const [summary, setSummary] = useState<ApartmentPaymentSummary | null>(null);
@@ -78,9 +80,9 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
       setError('');
       const data = await paymentsApi.getApartmentSummary(apartmentId);
       setSummary(data);
-      // Pre-fill amount with current balance if positive
-      if (data.current_balance > 0) {
-        setAmount(data.current_balance.toFixed(2));
+      // Pre-fill amount with owed balance if negative (they owe money)
+      if (data.balance < 0) {
+        setAmount(Math.abs(data.balance).toFixed(2));
       } else {
         setAmount('');
       }
@@ -118,10 +120,21 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
         notes: notes || undefined,
       });
       
+      toast({
+        title: '✅ Плащането е записано',
+        description: `Ап. ${summary?.apartment_number} - ${parsedAmount.toFixed(2)} лв`,
+        variant: 'success',
+      });
       onSuccess();
       handleClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Грешка при запис на плащането');
+      const errorMessage = err.response?.data?.detail || 'Грешка при запис на плащането';
+      setError(errorMessage);
+      toast({
+        title: '❌ Грешка',
+        description: errorMessage,
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -151,15 +164,6 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
     return `${months[parseInt(m) - 1]} ${year}`;
   };
 
-  const getPaymentMethodLabel = (method: string): string => {
-    switch (method) {
-      case 'cash': return '💵 В брой';
-      case 'bank': return '🏦 Банка';
-      case 'card': return '💳 Карта';
-      default: return method;
-    }
-  };
-
   const paymentMethods = [
     { value: 'cash', label: '💵 В брой' },
     { value: 'bank', label: '🏦 Банка' },
@@ -187,7 +191,7 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {apartments.map((apt) => (
-                  <SelectItem key={apt.id} value={String(apt.id)}>
+                  <SelectItem key={apt.id} value={apt.id.toString()}>
                     Ап. {apt.number} - {apt.owner_name}
                   </SelectItem>
                 ))}
@@ -202,66 +206,80 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
             </div>
           )}
 
-          {/* Summary info */}
+          {/* Summary */}
           {summary && !isLoadingSummary && (
-            <>
-              {/* Apartment info */}
+            <div className="space-y-4">
+              {/* Account info */}
               <div className="bg-muted rounded-lg p-4">
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="text-muted-foreground">Апартамент:</div>
                   <div className="font-medium">{summary.apartment_number}</div>
                   <div className="text-muted-foreground">Собственик:</div>
                   <div className="font-medium">{summary.owner_name}</div>
-                  <div className="text-muted-foreground">Общо дължимо:</div>
-                  <div className="font-medium">{summary.total_due.toFixed(2)} лв</div>
-                  <div className="text-muted-foreground">Общо платено:</div>
-                  <div className="font-medium">{summary.total_paid.toFixed(2)} лв</div>
-                  <div className="text-muted-foreground font-semibold">Текущ баланс:</div>
+                  <div className="text-muted-foreground">Общо задължения:</div>
+                  <div className="font-medium">{summary.total_obligations.toFixed(2)} лв</div>
+                  <div className="text-muted-foreground">Общо плащания:</div>
+                  <div className="font-medium">{summary.total_payments.toFixed(2)} лв</div>
+                  <div className="text-muted-foreground">Баланс:</div>
                   <div className={cn(
                     "font-bold",
-                    summary.current_balance > 0 && "text-destructive",
-                    summary.current_balance < 0 && "text-green-600",
-                    summary.current_balance === 0 && "text-muted-foreground"
+                    summary.balance < 0 && "text-destructive",
+                    summary.balance > 0 && "text-blue-600",
+                    summary.balance === 0 && "text-green-600"
                   )}>
-                    {summary.current_balance > 0 
-                      ? `Дължи ${summary.current_balance.toFixed(2)} лв`
-                      : summary.current_balance < 0
-                        ? `Предплатил ${Math.abs(summary.current_balance).toFixed(2)} лв`
-                        : 'Няма задължения'
-                    }
+                    {summary.balance < 0
+                      ? `Дължи ${Math.abs(summary.balance).toFixed(2)} лв`
+                      : summary.balance > 0
+                        ? `Авансово ${summary.balance.toFixed(2)} лв`
+                        : 'Изплатен'}
                   </div>
                 </div>
               </div>
 
               {/* Recent payments */}
-              {summary.recent_payments.length > 0 && (
+              {summary.recent_payments && summary.recent_payments.length > 0 && (
                 <div className="space-y-2">
-                  <Label>Последни 3 плащания:</Label>
-                  <div className="bg-muted rounded-lg divide-y divide-border">
+                  <Label className="text-muted-foreground">Последни плащания:</Label>
+                  <div className="space-y-1">
                     {summary.recent_payments.map((payment: RecentPayment) => (
-                      <div key={payment.id} className="px-4 py-2 flex justify-between items-center text-sm">
-                        <div>
-                          <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
-                          <span className="mx-2">•</span>
-                          <span className="text-muted-foreground">{formatMonth(payment.month)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            {getPaymentMethodLabel(payment.payment_method)}
-                          </span>
-                          <span className="font-medium text-green-600">
-                            {payment.amount.toFixed(2)} лв
-                          </span>
-                        </div>
+                      <div
+                        key={payment.id}
+                        className="flex justify-between text-sm bg-muted/50 rounded px-3 py-1"
+                      >
+                        <span className="text-muted-foreground">
+                          {formatDate(payment.payment_date)} - {formatMonth(payment.month)}
+                        </span>
+                        <span className="font-medium">{payment.amount.toFixed(2)} лв</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
+              {/* Error */}
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Quick fill button */}
+              {summary.balance < 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setAmount(Math.abs(summary.balance).toFixed(2))}
+                  >
+                    Въведи дължимата сума ({Math.abs(summary.balance).toFixed(2)} лв)
+                  </Button>
+                </div>
+              )}
+
               {/* Amount input */}
               <div className="space-y-2">
-                <Label htmlFor="amount">Сума за плащане (лв):</Label>
+                <Label htmlFor="amount">Сума (лв):</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -273,16 +291,6 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
                   placeholder="0.00"
                   required
                 />
-                {summary.current_balance > 0 && (
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="p-0 h-auto text-sm"
-                    onClick={() => setAmount(summary.current_balance.toFixed(2))}
-                  >
-                    Въведи пълната дължима сума ({summary.current_balance.toFixed(2)} лв)
-                  </Button>
-                )}
               </div>
 
               {/* Payment method */}
@@ -318,13 +326,6 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
                   placeholder="Напр. платено от съпруга"
                 />
               </div>
-            </>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg">
-              {error}
             </div>
           )}
 
@@ -340,16 +341,16 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !summary || !amount}
+              disabled={isSubmitting || !summary || !amount || parseFloat(amount) <= 0}
               className="bg-green-600 hover:bg-green-700"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Записване...
+                  Записва се...
                 </>
               ) : (
-                '✓ Запиши плащане'
+                '✅ Запиши плащане'
               )}
             </Button>
           </DialogFooter>

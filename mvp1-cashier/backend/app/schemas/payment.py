@@ -1,4 +1,7 @@
-"""Payment schemas."""
+"""Payment schemas.
+
+Актуализирано за account-based система.
+"""
 
 from pydantic import BaseModel, Field
 from datetime import date, datetime
@@ -43,11 +46,16 @@ class PaymentList(BaseModel):
 
 class ReceiptData(BaseModel):
     """Data for printing a receipt."""
-    apartment_number: str
-    amount: float
-    month: str
+    receipt_number: str
+    payment_id: int
     payment_date: date
-    receipt_number: int | None = None
+    amount: float
+    payment_method: str
+    apartment_number: str
+    owner_name: str
+    month: str
+    collected_by: str
+    notes: str | None = None
 
 
 class RecentPayment(BaseModel):
@@ -68,7 +76,7 @@ class ApartmentPaymentSummary(BaseModel):
     Показва информация за апартамент при въвеждане на плащане:
     - Информация за апартамента
     - Последни 3 плащания
-    - Текущ баланс (положителен = дължи, отрицателен = предплатил)
+    - Баланс на сметката
     """
     apartment_id: int
     apartment_number: str
@@ -77,9 +85,9 @@ class ApartmentPaymentSummary(BaseModel):
     # Последни 3 плащания
     recent_payments: list[RecentPayment]
     
-    # Текущ баланс: положителен = дължи, отрицателен = предплатил
-    current_balance: float = Field(..., description="Текущ баланс (+ дължи, - предплатил)")
+    # Баланс на сметката: положителен = кредит/авансово, отрицателен = дължи
+    balance: float = Field(..., description="Баланс (+ кредит, - дължи)")
     
     # Допълнителна информация
-    total_due: float = Field(..., description="Общо дължимо")
-    total_paid: float = Field(..., description="Общо платено")
+    total_obligations: float = Field(..., description="Общо задължения")
+    total_payments: float = Field(..., description="Общо плащания")

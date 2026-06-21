@@ -2,8 +2,10 @@ import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/toaster';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Wallet, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, Wallet, LogOut, User, Building2 } from 'lucide-react';
 
 const Layout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -13,6 +15,7 @@ const Layout: React.FC = () => {
 
   const navItems = [
     { path: '/', label: 'Табло', icon: LayoutDashboard },
+    { path: '/apartments', label: 'Домова книга', icon: Building2 },
     { path: '/payments', label: 'Плащания', icon: Wallet },
   ];
 
@@ -48,12 +51,13 @@ const Layout: React.FC = () => {
               })}
             </nav>
 
-            {/* User info */}
-            <div className="flex items-center space-x-4">
+            {/* User info and actions */}
+            <div className="flex items-center space-x-2">
               <span className="text-sm text-muted-foreground flex items-center gap-2">
                 <User className="h-4 w-4" />
                 {user?.display_name}
               </span>
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
@@ -72,6 +76,9 @@ const Layout: React.FC = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Outlet />
       </main>
+
+      {/* Toast notifications */}
+      <Toaster />
     </div>
   );
 };

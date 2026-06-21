@@ -1,10 +1,14 @@
-"""DomOS Cashier MVP - FastAPI Application."""
+"""DomOS Cashier MVP - FastAPI Application.
+
+Актуализирано: Премахнати legacy routers за monthly_charges и custom_charges.
+Всички задължения се управляват чрез унифицирания /api/obligations endpoint.
+"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import apartments, payments, monthly_charges, auth, dashboard
+from app.api import apartments, payments, auth, dashboard, receipts, reports, obligations
 
 # Create FastAPI app
 app = FastAPI(
@@ -26,8 +30,10 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Автентикация"])
 app.include_router(apartments.router, prefix="/api/apartments", tags=["Апартаменти"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Плащания"])
-app.include_router(monthly_charges.router, prefix="/api/charges", tags=["Задължения"])
+app.include_router(obligations.router, prefix="/api", tags=["Задължения"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Табло"])
+app.include_router(receipts.router, tags=["Разписки"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Справки"])
 
 
 @app.get("/")

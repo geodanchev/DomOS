@@ -5,7 +5,7 @@ sys.path.insert(0, '.')
 
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
-from app.models import Apartment, Payment, MonthlyCharge, User
+from app.models import Apartment, Payment, MonthlyCharge, User, CustomCharge
 from app.core.security import get_password_hash
 from app.models.monthly_charge import ChargeStatus
 from app.models.user import UserRole

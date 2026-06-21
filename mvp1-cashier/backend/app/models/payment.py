@@ -10,6 +10,7 @@ from app.db.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.models.apartment import Apartment
     from app.models.user import User
+    from app.models.receipt import Receipt
 
 
 class Payment(Base, TimestampMixin):
@@ -80,6 +81,7 @@ class Payment(Base, TimestampMixin):
     # Relationships
     apartment: Mapped["Apartment"] = relationship(back_populates="payments")
     collected_by: Mapped["User"] = relationship(back_populates="collected_payments")
+    receipts: Mapped[list["Receipt"]] = relationship(back_populates="payment")
     
     def __repr__(self) -> str:
         return f"<Payment(id={self.id}, apartment_id={self.apartment_id}, amount={self.amount}, month='{self.month}')>"

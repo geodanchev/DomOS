@@ -9,6 +9,7 @@ from app.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.payment import Payment
+    from app.models.receipt import Receipt
 
 
 class UserRole(str, Enum):
@@ -71,6 +72,10 @@ class User(Base, TimestampMixin):
     collected_payments: Mapped[list["Payment"]] = relationship(
         back_populates="collected_by",
         foreign_keys="Payment.collected_by_id"
+    )
+    issued_receipts: Mapped[list["Receipt"]] = relationship(
+        back_populates="issued_by",
+        foreign_keys="Receipt.issued_by_id"
     )
     
     def __repr__(self) -> str:

@@ -1,13 +1,19 @@
-"""Dashboard API endpoints - табло за касиера."""
+"""Dashboard API endpoints - табло за касиера.
+
+Актуализирано за account-based система.
+Статусът на апартамент се определя от баланса на сметката.
+"""
 
 from datetime import date
+from decimal import Decimal
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.session import get_db
 from app.models.apartment import Apartment
-from app.models.monthly_charge import MonthlyCharge, ChargeStatus
+from app.models.account import ApartmentAccount
+from app.models.obligation import Obligation
 from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.statistics import CashierDashboard, ApartmentStatus, FundBalance
@@ -22,99 +28,118 @@ def get_current_month() -> str:
     return f"{today.year}-{today.month:02d}"
 
 
-def status_to_display(status: ChargeStatus) -> str:
-    """Convert status enum to Bulgarian display text."""
-    mapping = {
-        ChargeStatus.PAID: "Да",
-        ChargeStatus.PARTIAL: "Частично",
-        ChargeStatus.UNPAID: "Не",
-    }
-    return mapping.get(status, "?")
+def get_status_from_balance(balance: Decimal) -> tuple[str, str]:
+    """Get status and display text from balance.
+    
+    Returns:
+        tuple: (status, status_display)
+        - status: "paid", "owes", "credit"
+        - status_display: Bulgarian text for display
+    """
+    if balance > 0:
+        return "credit", f"Авансово {float(balance):.2f} лв"
+    elif balance < 0:
+        return "owes", f"Дължи {abs(float(balance)):.2f} лв"
+    else:
+        return "paid", "Изплатен"
 
 
 @router.get("", response_model=CashierDashboard)
 async def get_dashboard(
-    month: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get cashier dashboard data.
     
     Това е основният екран за касиера.
-    Показва за 2 минути:
+    Показва:
     - Колко апартамента има
-    - Колко дължи всеки
-    - Кой е платил
-    - Кой не е платил
-    - Колко пари има във фонда
+    - Баланс на всеки апартамент
+    - Кой е платил, кой дължи
+    - Процент събираемост
     """
-    target_month = month or get_current_month()
+    current_month = get_current_month()
     
-    # Get all apartments
+    # Get all apartments with their accounts
     apartments = db.query(Apartment).order_by(Apartment.number).all()
     total_apartments = len(apartments)
     
-    # Get charges for this month
-    charges_map = {}
-    charges = db.query(MonthlyCharge).filter(
-        MonthlyCharge.month == target_month
-    ).all()
-    for c in charges:
-        charges_map[c.apartment_id] = c
-    
     # Build apartment statuses
     apartment_statuses = []
-    total_due = 0.0
-    total_paid = 0.0
+    total_collected = Decimal("0")
+    total_owed = Decimal("0")
     paid_count = 0
-    partial_count = 0
-    unpaid_count = 0
+    owes_count = 0
     
     for apt in apartments:
-        charge = charges_map.get(apt.id)
+        # Get or create account for apartment
+        account = apt.account
         
-        if charge:
-            amount_due = float(charge.amount_due)
-            amount_paid = float(charge.amount_paid)
-            status = charge.status
+        if account:
+            balance = Decimal(str(account.balance))
         else:
-            # No charge yet - use apartment's monthly fee
-            amount_due = float(apt.monthly_fee)
-            amount_paid = 0.0
-            status = ChargeStatus.UNPAID
+            # No account yet - calculate from payments and obligations
+            total_payments = db.query(func.sum(Payment.amount)).filter(
+                Payment.apartment_id == apt.id
+            ).scalar() or Decimal("0")
+            
+            total_obligations = db.query(func.sum(Obligation.amount)).filter(
+                Obligation.apartment_id == apt.id
+            ).scalar() or Decimal("0")
+            
+            balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
+            
+            # Create account for this apartment
+            account = ApartmentAccount(
+                apartment_id=apt.id,
+                balance=balance
+            )
+            db.add(account)
+            db.commit()
         
-        total_due += amount_due
-        total_paid += amount_paid
+        # Calculate totals for this apartment
+        apt_total_payments = db.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == apt.id
+        ).scalar() or Decimal("0")
         
-        if status == ChargeStatus.PAID:
+        apt_total_obligations = db.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == apt.id
+        ).scalar() or Decimal("0")
+        
+        # Get status from balance
+        status, status_display = get_status_from_balance(balance)
+        
+        # Track totals
+        total_collected += Decimal(str(apt_total_payments))
+        if balance < 0:
+            total_owed += abs(balance)
+            owes_count += 1
+        else:
             paid_count += 1
-        elif status == ChargeStatus.PARTIAL:
-            partial_count += 1
-        else:
-            unpaid_count += 1
         
         apartment_statuses.append(ApartmentStatus(
             apartment_id=apt.id,
             apartment_number=apt.number,
             owner_name=apt.owner_name,
-            amount_due=amount_due,
-            amount_paid=amount_paid,
+            balance=float(balance),
+            total_obligations=float(apt_total_obligations),
+            total_payments=float(apt_total_payments),
             status=status,
-            status_display=status_to_display(status),
+            status_display=status_display,
         ))
     
     # Calculate collection rate
-    collection_rate = (total_paid / total_due * 100) if total_due > 0 else 0.0
+    total_obligations_all = total_collected + total_owed
+    collection_rate = (float(total_collected) / float(total_obligations_all) * 100) if total_obligations_all > 0 else 100.0
     
     return CashierDashboard(
         total_apartments=total_apartments,
-        total_collected=round(total_paid, 2),
-        total_unpaid=round(total_due - total_paid, 2),
+        total_collected=round(float(total_collected), 2),
+        total_owed=round(float(total_owed), 2),
         collection_rate=round(collection_rate, 1),
         paid_count=paid_count,
-        partial_count=partial_count,
-        unpaid_count=unpaid_count,
-        current_month=target_month,
+        owes_count=owes_count,
+        current_month=current_month,
         apartments=apartment_statuses,
     )
 

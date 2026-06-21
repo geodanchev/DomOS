@@ -58,14 +58,15 @@ const Dashboard: React.FC = () => {
     return `${months[parseInt(m) - 1]} ${year}`;
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, statusDisplay: string) => {
     switch (status) {
       case 'paid':
-        return <Badge variant="success">✓ Платено</Badge>;
-      case 'partial':
-        return <Badge variant="warning">◐ Частично</Badge>;
+        return <Badge variant="success">✓ {statusDisplay}</Badge>;
+      case 'credit':
+        return <Badge variant="default" className="bg-blue-500">💰 {statusDisplay}</Badge>;
+      case 'owes':
       default:
-        return <Badge variant="destructive">✗ Неплатено</Badge>;
+        return <Badge variant="destructive">✗ {statusDisplay}</Badge>;
     }
   };
 
@@ -113,23 +114,23 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Collected this month */}
+        {/* Collected total */}
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium opacity-90">📥 Събрано този месец</CardTitle>
+            <CardTitle className="text-sm font-medium opacity-90">📥 Общо събрани</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{dashboard?.total_collected.toFixed(2)} лв</div>
           </CardContent>
         </Card>
 
-        {/* Remaining */}
+        {/* Total Owed */}
         <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium opacity-90">⏳ Остават за събиране</CardTitle>
+            <CardTitle className="text-sm font-medium opacity-90">⏳ Общо дължимо</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{dashboard?.total_unpaid.toFixed(2)} лв</div>
+            <div className="text-3xl font-bold">{dashboard?.total_owed.toFixed(2)} лв</div>
           </CardContent>
         </Card>
 
@@ -141,7 +142,7 @@ const Dashboard: React.FC = () => {
           <CardContent>
             <div className="text-3xl font-bold">{dashboard?.collection_rate}%</div>
             <div className="text-sm opacity-90 mt-1">
-              {dashboard?.paid_count} платили / {dashboard?.total_apartments} общо
+              {dashboard?.paid_count} изплатени / {dashboard?.total_apartments} общо
             </div>
           </CardContent>
         </Card>
@@ -150,13 +151,10 @@ const Dashboard: React.FC = () => {
       {/* Quick Stats */}
       <div className="flex gap-4 flex-wrap">
         <Badge variant="success" className="px-4 py-2 text-sm">
-          ✓ Платили: {dashboard?.paid_count}
-        </Badge>
-        <Badge variant="warning" className="px-4 py-2 text-sm">
-          ◐ Частично: {dashboard?.partial_count}
+          ✓ Изплатени: {dashboard?.paid_count}
         </Badge>
         <Badge variant="destructive" className="px-4 py-2 text-sm">
-          ✗ Неплатили: {dashboard?.unpaid_count}
+          ✗ Дължат: {dashboard?.owes_count}
         </Badge>
       </div>
 
@@ -171,8 +169,9 @@ const Dashboard: React.FC = () => {
               <TableRow>
                 <TableHead>Ап.</TableHead>
                 <TableHead>Собственик</TableHead>
-                <TableHead className="text-right">Дължи</TableHead>
-                <TableHead className="text-right">Платил</TableHead>
+                <TableHead className="text-right">Задължения</TableHead>
+                <TableHead className="text-right">Плащания</TableHead>
+                <TableHead className="text-right">Баланс</TableHead>
                 <TableHead className="text-center">Статус</TableHead>
                 <TableHead className="text-center">Действие</TableHead>
               </TableRow>
@@ -185,23 +184,37 @@ const Dashboard: React.FC = () => {
                   </TableCell>
                   <TableCell>{apt.owner_name}</TableCell>
                   <TableCell className="text-right">
-                    {apt.amount_due.toFixed(2)} лв
+                    {apt.total_obligations.toFixed(2)} лв
                   </TableCell>
                   <TableCell className="text-right">
-                    {apt.amount_paid.toFixed(2)} лв
+                    {apt.total_payments.toFixed(2)} лв
+                  </TableCell>
+                  <TableCell className={`text-right font-medium ${apt.balance < 0 ? 'text-red-600' : apt.balance > 0 ? 'text-blue-600' : 'text-green-600'}`}>
+                    {apt.balance.toFixed(2)} лв
                   </TableCell>
                   <TableCell className="text-center">
-                    {getStatusBadge(apt.status)}
+                    {getStatusBadge(apt.status, apt.status_display)}
                   </TableCell>
                   <TableCell className="text-center">
-                    {apt.status !== 'paid' && (
+                    {apt.status === 'owes' && (
                       <Button
                         size="sm"
                         onClick={() => setSelectedApartment(apt)}
-                        className="bg-green-600 hover:bg-green-700"
                       >
-                        💵 Плати
+                        💵 Плащане
                       </Button>
+                    )}
+                    {apt.status === 'paid' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedApartment(apt)}
+                      >
+                        💵 Авансово
+                      </Button>
+                    )}
+                    {apt.status === 'credit' && (
+                      <span className="text-sm text-muted-foreground">Авансово</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -212,10 +225,10 @@ const Dashboard: React.FC = () => {
       </Card>
 
       {/* Payment Modal */}
-      {selectedApartment && dashboard && (
+      {selectedApartment && (
         <PaymentModal
           apartment={selectedApartment}
-          month={dashboard.current_month}
+          currentMonth={dashboard?.current_month || ''}
           onClose={() => setSelectedApartment(null)}
           onSuccess={handlePaymentSuccess}
         />

@@ -4,13 +4,22 @@ import type {
   User,
   ApartmentList,
   Apartment,
+  ApartmentCreate,
+  ApartmentUpdate,
   PaymentList,
   Payment,
   PaymentCreate,
-  MonthlyChargeList,
   CashierDashboard,
   FundBalance,
   ApartmentPaymentSummary,
+  // Obligation types
+  Obligation,
+  ObligationCreate,
+  ObligationUpdate,
+  ObligationType,
+  ObligationSummary,
+  MonthlyObligationsSummary,
+  ApartmentBalance,
 } from '../types';
 
 // Create axios instance
@@ -76,6 +85,20 @@ export const apartmentsApi = {
     const response = await api.get<Apartment>(`/apartments/${id}`);
     return response.data;
   },
+  
+  create: async (data: ApartmentCreate): Promise<Apartment> => {
+    const response = await api.post<Apartment>('/apartments', data);
+    return response.data;
+  },
+  
+  update: async (id: number, data: ApartmentUpdate): Promise<Apartment> => {
+    const response = await api.put<Apartment>(`/apartments/${id}`, data);
+    return response.data;
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/apartments/${id}`);
+  },
 };
 
 // Payments API
@@ -109,23 +132,89 @@ export const paymentsApi = {
   },
 };
 
-// Monthly Charges API
-export const chargesApi = {
-  getAll: async (month?: string): Promise<MonthlyChargeList> => {
-    const params = month ? `?month=${month}` : '';
-    const response = await api.get<MonthlyChargeList>(`/charges${params}`);
+// =============================================================================
+// Obligations API (унифициран модел за задължения)
+// =============================================================================
+
+export interface ObligationFilters {
+  skip?: number;
+  limit?: number;
+  type?: ObligationType;
+  apartment_id?: number;
+  month?: string;
+}
+
+export const obligationsApi = {
+  // CRUD операции
+  getAll: async (filters?: ObligationFilters): Promise<Obligation[]> => {
+    const params = new URLSearchParams();
+    if (filters?.skip) params.append('skip', filters.skip.toString());
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.type) params.append('type', filters.type);
+    if (filters?.apartment_id) params.append('apartment_id', filters.apartment_id.toString());
+    if (filters?.month) params.append('month', filters.month);
+    
+    const response = await api.get<Obligation[]>(`/obligations?${params}`);
     return response.data;
   },
   
-  generate: async (month: string): Promise<{ message: string; count: number }> => {
-    const response = await api.post<{ message: string; count: number }>(
-      `/charges/generate?month=${month}`
-    );
+  getById: async (id: number): Promise<Obligation> => {
+    const response = await api.get<Obligation>(`/obligations/${id}`);
+    return response.data;
+  },
+  
+  create: async (data: ObligationCreate): Promise<Obligation> => {
+    const response = await api.post<Obligation>('/obligations', data);
+    return response.data;
+  },
+  
+  update: async (id: number, data: ObligationUpdate): Promise<Obligation> => {
+    const response = await api.patch<Obligation>(`/obligations/${id}`, data);
+    return response.data;
+  },
+  
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/obligations/${id}`);
+  },
+  
+  // Apartment-specific
+  getByApartment: async (apartmentId: number): Promise<Obligation[]> => {
+    const response = await api.get<Obligation[]>(`/obligations/apartment/${apartmentId}`);
+    return response.data;
+  },
+  
+  getApartmentBalance: async (apartmentId: number): Promise<ApartmentBalance> => {
+    const response = await api.get<ApartmentBalance>(`/obligations/apartment/${apartmentId}/balance`);
+    return response.data;
+  },
+  
+  // Monthly generation
+  generateMonthly: async (month: string): Promise<Obligation[]> => {
+    const response = await api.post<Obligation[]>(`/obligations/generate-monthly?month=${month}`);
+    return response.data;
+  },
+  
+  // Statistics
+  getSummary: async (filters?: { apartment_id?: number; month?: string; type?: ObligationType }): Promise<ObligationSummary> => {
+    const params = new URLSearchParams();
+    if (filters?.apartment_id) params.append('apartment_id', filters.apartment_id.toString());
+    if (filters?.month) params.append('month', filters.month);
+    if (filters?.type) params.append('type', filters.type);
+    
+    const response = await api.get<ObligationSummary>(`/obligations/stats/summary?${params}`);
+    return response.data;
+  },
+  
+  getMonthlySummary: async (month: string): Promise<MonthlyObligationsSummary> => {
+    const response = await api.get<MonthlyObligationsSummary>(`/obligations/stats/monthly/${month}`);
     return response.data;
   },
 };
 
+// =============================================================================
 // Dashboard API
+// =============================================================================
+
 export const dashboardApi = {
   getDashboard: async (month?: string): Promise<CashierDashboard> => {
     const params = month ? `?month=${month}` : '';

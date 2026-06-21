@@ -33,6 +33,24 @@ export interface ApartmentList {
   total: number;
 }
 
+export interface ApartmentCreate {
+  number: string;
+  floor?: number | null;
+  owner_name: string;
+  residents_count: number;
+  monthly_fee: number;
+  notes?: string | null;
+}
+
+export interface ApartmentUpdate {
+  number?: string;
+  floor?: number | null;
+  owner_name?: string;
+  residents_count?: number;
+  monthly_fee?: number;
+  notes?: string | null;
+}
+
 // Payment types
 export interface Payment {
   id: number;
@@ -64,46 +82,83 @@ export interface PaymentList {
   total: number;
 }
 
-// Monthly charge types
-export type ChargeStatus = 'paid' | 'partial' | 'unpaid';
+// =============================================================================
+// Obligation types (унифициран модел за задължения)
+// Account-based система: Obligation съдържа само amount (без amount_paid, status)
+// =============================================================================
 
-export interface MonthlyCharge {
+export type ObligationType = 'monthly' | 'initial' | 'penalty' | 'repair' | 'fund' | 'other';
+
+export interface Obligation {
   id: number;
+  type: ObligationType;
   apartment_id: number;
-  month: string;
-  amount_due: number;
-  amount_paid: number;
-  status: ChargeStatus;
+  month: string | null;  // Само за monthly тип
+  amount: number;        // Сума на задължението
+  description: string | null;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
+  // Допълнителни полета от API
   apartment_number?: string;
   owner_name?: string;
 }
 
-export interface MonthlyChargeList {
-  items: MonthlyCharge[];
+export interface ObligationCreate {
+  type: ObligationType;
+  apartment_id: number;
+  month?: string | null;
+  amount: number;
+  description?: string | null;
+}
+
+export interface ObligationUpdate {
+  amount?: number;
+  description?: string | null;
+}
+
+export interface ObligationList {
+  items: Obligation[];
   total: number;
 }
 
-// Dashboard types
+export interface ObligationSummary {
+  total_obligations: number;
+  total_payments: number;
+  balance: number;  // положителен = кредит, отрицателен = дължи
+  count_obligations: number;
+}
+
+export interface MonthlyObligationsSummary extends ObligationSummary {
+  month: string;
+}
+
+export interface ApartmentBalance {
+  apartment_id: number;
+  balance: number;  // positive = credit/overpaid, negative = owes
+}
+
+// =============================================================================
+// Dashboard types (Account-based система)
+// =============================================================================
+
 export interface ApartmentStatus {
   apartment_id: number;
   apartment_number: string;
   owner_name: string;
-  amount_due: number;
-  amount_paid: number;
-  status: ChargeStatus;
-  status_display: string;
+  balance: number;           // Баланс на сметката (отрицателен = дължи)
+  total_obligations: number; // Общо задължения
+  total_payments: number;    // Общо плащания
+  status: 'paid' | 'owes' | 'credit';  // Статус
+  status_display: string;    // "Изплатен", "Дължи X лв", "Авансово X лв"
 }
 
 export interface CashierDashboard {
   total_apartments: number;
   total_collected: number;
-  total_unpaid: number;
+  total_owed: number;        // Общо дължимо (сума на отрицателните баланси)
   collection_rate: number;
-  paid_count: number;
-  partial_count: number;
-  unpaid_count: number;
+  paid_count: number;        // Брой изплатени (баланс >= 0)
+  owes_count: number;        // Брой дължащи (баланс < 0)
   current_month: string;
   apartments: ApartmentStatus[];
 }
@@ -128,7 +183,21 @@ export interface ApartmentPaymentSummary {
   apartment_number: string;
   owner_name: string;
   recent_payments: RecentPayment[];
-  current_balance: number;  // positive = owes, negative = overpaid
-  total_due: number;
-  total_paid: number;
+  balance: number;           // Баланс (положителен = кредит, отрицателен = дължи)
+  total_obligations: number; // Общо задължения
+  total_payments: number;    // Общо плащания
+}
+
+// Receipt types
+export interface ReceiptData {
+  receipt_number: string;
+  payment_id: number;
+  payment_date: string;
+  amount: number;
+  payment_method: string;
+  apartment_number: string;
+  owner_name: string;
+  month: string;
+  collected_by: string;
+  notes?: string | null;
 }

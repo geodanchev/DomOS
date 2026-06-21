@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Payments from './pages/Payments';
+import Apartments from './pages/Apartments';
 import Layout from './components/Layout';
 
 // Protected route wrapper
@@ -39,6 +40,7 @@ const App: React.FC = () => {
       >
         <Route index element={<Dashboard />} />
         <Route path="payments" element={<Payments />} />
+        <Route path="apartments" element={<Apartments />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

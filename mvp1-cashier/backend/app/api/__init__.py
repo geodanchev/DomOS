@@ -1,5 +1,8 @@
-"""API routers."""
+"""API routers.
 
-from app.api import apartments, payments, monthly_charges, auth, dashboard
+Актуализирано: Премахнати legacy routers за monthly_charges и custom_charges.
+"""
 
-__all__ = ["apartments", "payments", "monthly_charges", "auth", "dashboard"]
+from app.api import apartments, payments, auth, dashboard, obligations
+
+__all__ = ["apartments", "payments", "auth", "dashboard", "obligations"]

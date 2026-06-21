@@ -13,22 +13,27 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 interface PaymentModalProps {
   apartment: ApartmentStatus;
-  month: string;
+  currentMonth: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
   apartment,
-  month,
+  currentMonth,
   onClose,
   onSuccess,
 }) => {
-  const remaining = apartment.amount_due - apartment.amount_paid;
-  const [amount, setAmount] = useState(remaining.toFixed(2));
+  const { toast } = useToast();
+  
+  // Balance is negative when they owe money, so we take the absolute value
+  const amountOwed = apartment.balance < 0 ? Math.abs(apartment.balance) : 0;
+  
+  const [amount, setAmount] = useState(amountOwed > 0 ? amountOwed.toFixed(2) : '');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,24 +48,42 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       await paymentsApi.create({
         apartment_id: apartment.apartment_id,
         amount: parseFloat(amount),
-        month: month,
+        month: currentMonth,
         payment_method: paymentMethod,
         notes: notes || undefined,
       });
+      toast({
+        title: '✅ Плащането е записано',
+        description: `Ап. ${apartment.apartment_number} - ${parseFloat(amount).toFixed(2)} лв`,
+        variant: 'success',
+      });
       onSuccess();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Грешка при запис на плащането');
+      const errorMessage = err.response?.data?.detail || 'Грешка при запис на плащането';
+      setError(errorMessage);
+      toast({
+        title: '❌ Грешка',
+        description: errorMessage,
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const quickAmounts = [
-    { label: 'Цяла сума', value: remaining },
-    { label: '10 лв', value: 10 },
-    { label: '20 лв', value: 20 },
-    { label: '50 лв', value: 50 },
-  ];
+  const quickAmounts = amountOwed > 0 
+    ? [
+        { label: 'Цяла сума', value: amountOwed },
+        { label: '10 лв', value: 10 },
+        { label: '20 лв', value: 20 },
+        { label: '50 лв', value: 50 },
+      ]
+    : [
+        { label: '10 лв', value: 10 },
+        { label: '20 лв', value: 20 },
+        { label: '50 лв', value: 50 },
+        { label: '100 лв', value: 100 },
+      ];
 
   const paymentMethods = [
     { value: 'cash', label: '💵 В брой' },
@@ -83,12 +106,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="font-medium">{apartment.apartment_number}</div>
               <div className="text-muted-foreground">Собственик:</div>
               <div className="font-medium">{apartment.owner_name}</div>
-              <div className="text-muted-foreground">Дължима сума:</div>
-              <div className="font-medium">{apartment.amount_due.toFixed(2)} лв</div>
-              <div className="text-muted-foreground">Платено:</div>
-              <div className="font-medium">{apartment.amount_paid.toFixed(2)} лв</div>
-              <div className="text-muted-foreground">Остатък:</div>
-              <div className="font-bold text-primary">{remaining.toFixed(2)} лв</div>
+              <div className="text-muted-foreground">Общо задължения:</div>
+              <div className="font-medium">{apartment.total_obligations.toFixed(2)} лв</div>
+              <div className="text-muted-foreground">Общо плащания:</div>
+              <div className="font-medium">{apartment.total_payments.toFixed(2)} лв</div>
+              <div className="text-muted-foreground">Баланс:</div>
+              <div className={cn(
+                "font-bold",
+                apartment.balance < 0 ? "text-red-600" : apartment.balance > 0 ? "text-blue-600" : "text-green-600"
+              )}>
+                {apartment.balance.toFixed(2)} лв
+                {apartment.balance < 0 && " (дължи)"}
+                {apartment.balance > 0 && " (авансово)"}
+              </div>
             </div>
           </div>
 
@@ -179,16 +209,16 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </Button>
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !amount || parseFloat(amount) <= 0}
               className="bg-green-600 hover:bg-green-700"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Записване...
+                  Записва се...
                 </>
               ) : (
-                '✓ Запиши плащане'
+                '✅ Запиши плащане'
               )}
             </Button>
           </DialogFooter>

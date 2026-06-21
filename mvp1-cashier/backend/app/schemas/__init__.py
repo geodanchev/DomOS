@@ -1,4 +1,9 @@
-"""Pydantic schemas for API request/response models."""
+"""Pydantic schemas for API request/response models.
+
+Актуализирано: Account-based система.
+- Добавени Account и Transaction схеми
+- Премахнати ObligationStatus и ObligationPayment (не са нужни)
+"""
 
 from app.schemas.apartment import (
     ApartmentCreate,
@@ -11,11 +16,25 @@ from app.schemas.payment import (
     PaymentResponse,
     PaymentList,
 )
-from app.schemas.monthly_charge import (
-    MonthlyChargeCreate,
-    MonthlyChargeResponse,
-    MonthlyChargeList,
-    ChargeStatusUpdate,
+from app.schemas.obligation import (
+    ObligationType,
+    ObligationBase,
+    ObligationCreate,
+    ObligationUpdate,
+    ObligationResponse,
+    ObligationWithApartment,
+    ObligationSummary,
+    MonthlyObligationsSummary,
+)
+from app.schemas.account import (
+    TransactionType,
+    TransactionReference,
+    AccountBase,
+    AccountResponse,
+    TransactionBase,
+    TransactionResponse,
+    AccountWithTransactions,
+    AdjustmentCreate,
 )
 from app.schemas.user import (
     UserCreate,
@@ -38,11 +57,24 @@ __all__ = [
     "PaymentCreate",
     "PaymentResponse",
     "PaymentList",
-    # MonthlyCharge
-    "MonthlyChargeCreate",
-    "MonthlyChargeResponse",
-    "MonthlyChargeList",
-    "ChargeStatusUpdate",
+    # Obligation
+    "ObligationType",
+    "ObligationBase",
+    "ObligationCreate",
+    "ObligationUpdate",
+    "ObligationResponse",
+    "ObligationWithApartment",
+    "ObligationSummary",
+    "MonthlyObligationsSummary",
+    # Account
+    "TransactionType",
+    "TransactionReference",
+    "AccountBase",
+    "AccountResponse",
+    "TransactionBase",
+    "TransactionResponse",
+    "AccountWithTransactions",
+    "AdjustmentCreate",
     # User
     "UserCreate",
     "UserResponse",
