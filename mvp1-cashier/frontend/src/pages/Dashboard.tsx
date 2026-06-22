@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dashboardApi } from '../services/api';
 import type { CashierDashboard, FundBalance, ApartmentStatus } from '../types';
 import PaymentModal from '../components/PaymentModal';
+import NewObligationDialog from '../components/NewObligationDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2, Plus } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const [dashboard, setDashboard] = useState<CashierDashboard | null>(null);
@@ -21,6 +22,7 @@ const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedApartment, setSelectedApartment] = useState<ApartmentStatus | null>(null);
+  const [isObligationDialogOpen, setIsObligationDialogOpen] = useState(false);
 
   const loadData = async () => {
     try {
@@ -96,11 +98,27 @@ const Dashboard: React.FC = () => {
         <h2 className="text-2xl font-bold">
           📊 Табло - {dashboard && formatMonth(dashboard.current_month)}
         </h2>
-        <Button variant="secondary" onClick={loadData}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Опресни
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setIsObligationDialogOpen(true)}
+            className="bg-amber-600 hover:bg-amber-700"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Ново задължение
+          </Button>
+          <Button variant="secondary" onClick={loadData}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Опресни
+          </Button>
+        </div>
       </div>
+
+      {/* New Obligation Dialog */}
+      <NewObligationDialog
+        isOpen={isObligationDialogOpen}
+        onClose={() => setIsObligationDialogOpen(false)}
+        onSuccess={loadData}
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
