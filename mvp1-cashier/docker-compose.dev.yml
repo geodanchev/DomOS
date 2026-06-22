@@ -51,7 +51,10 @@ services:
     networks:
       - domos-network-dev
 
-  # React Frontend with Vite hot reload
+  # React Frontend with Vite
+  # Note: Source files are copied into the image (no volume mount)
+  # This avoids WSL/Docker volume mount issues
+  # For code changes, rebuild: docker compose -f docker-compose.dev.yml build frontend
   frontend:
     build:
       context: ./frontend
@@ -60,9 +63,6 @@ services:
     restart: unless-stopped
     environment:
       - VITE_API_URL=http://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     depends_on:
