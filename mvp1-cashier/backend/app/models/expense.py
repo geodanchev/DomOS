@@ -52,8 +52,8 @@ class Expense(Base):
     # Основни данни
     description = Column(String(500), nullable=False)  # Описание на разхода
     amount = Column(Numeric(10, 2), nullable=False)  # Сума
-    expense_type = Column(Enum(ExpenseType), nullable=False, default=ExpenseType.OTHER)
-    status = Column(Enum(ExpenseStatus), nullable=False, default=ExpenseStatus.PENDING)
+    expense_type = Column(Enum(ExpenseType, values_callable=lambda x: [e.value for e in x]), nullable=False, default=ExpenseType.OTHER)
+    status = Column(Enum(ExpenseStatus, values_callable=lambda x: [e.value for e in x]), nullable=False, default=ExpenseStatus.PENDING)
     
     # Дати
     expense_date = Column(DateTime, nullable=False, default=datetime.utcnow)  # Дата на разхода
