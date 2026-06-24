@@ -226,6 +226,101 @@ async def export_payments_excel(
     )
 
 
+@router.get("/payments/pdf")
+async def export_payments_pdf(
+    from_date: date = Query(..., description="Начална дата"),
+    to_date: date = Query(..., description="Крайна дата"),
+    apartment_id: Optional[int] = Query(None, description="ID на апартамент"),
+    payment_method: Optional[str] = Query(None, description="Метод на плащане"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """PDF експорт на справка за плащания."""
+    query = db.query(Payment).filter(
+        Payment.payment_date >= from_date,
+        Payment.payment_date <= to_date,
+    )
+    
+    if apartment_id:
+        query = query.filter(Payment.apartment_id == apartment_id)
+    
+    if payment_method:
+        query = query.filter(Payment.payment_method == payment_method)
+    
+    payments = query.order_by(Payment.payment_date.desc()).all()
+    
+    if not PDF_AVAILABLE:
+        # Return minimal PDF if library is missing
+        output = BytesIO()
+        output.write(b'%PDF-1.4\n%\xe2\xe3\xcf\xd3\n')
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=payments_{from_date}_{to_date}.pdf"}
+        )
+    
+    # Create PDF document
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title = Paragraph(f"Справка за плащания", styles['Title'])
+    elements.append(title)
+    
+    # Period
+    period = Paragraph(f"Период: {from_date} - {to_date}", styles['Normal'])
+    elements.append(period)
+    elements.append(Spacer(1, 20))
+    
+    # Table data
+    table_data = [["Дата", "Апартамент", "Собственик", "Сума", "Месец", "Метод"]]
+    
+    for p in payments:
+        apartment = db.query(Apartment).filter(Apartment.id == p.apartment_id).first()
+        table_data.append([
+            p.payment_date.isoformat(),
+            apartment.number if apartment else "N/A",
+            apartment.owner_name if apartment else "N/A",
+            f"{float(p.amount):.2f} лв",
+            p.month,
+            p.payment_method,
+        ])
+    
+    # Add total row
+    total_amount = sum(float(p.amount) for p in payments)
+    table_data.append(["", "", "ОБЩО:", f"{total_amount:.2f} лв", "", ""])
+    
+    # Create table
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    elements.append(table)
+    
+    # Build PDF
+    doc.build(elements)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=payments_{from_date}_{to_date}.pdf"}
+    )
+
+
+@router.get("/outstanding-debts/excel")
 @router.get("/debts/excel")
 async def export_debts_excel(
     db: Session = Depends(get_db),

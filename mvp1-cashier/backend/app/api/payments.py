@@ -1,21 +1,23 @@
 """Payments API endpoints - плащания.
 
-Актуализирано за account-based система.
+Актуализирано за account-based система + void (soft delete) support.
 При плащане се добавя кредит към сметката на апартамента.
+Плащанията НИКОГА не се изтриват - само се маркират като voided.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
 from app.db.session import get_db
 from app.models.apartment import Apartment
-from app.models.payment import Payment
+from app.models.payment import Payment, PaymentStatus
 from app.models.obligation import Obligation
 from app.models.account import ApartmentAccount, AccountTransaction, TransactionType, TransactionReference
 from app.models.user import User
+from app.models.audit_log import AuditAction, create_audit_log
 from app.schemas.payment import (
     PaymentCreate, 
     PaymentResponse, 
@@ -23,6 +25,8 @@ from app.schemas.payment import (
     ReceiptData,
     ApartmentPaymentSummary,
     RecentPayment,
+    PaymentVoidRequest,
+    PaymentVoidResponse,
 )
 from app.api.auth import get_current_user
 
@@ -84,17 +88,53 @@ def add_credit_to_account(
     return transaction
 
 
+def remove_credit_from_account(
+    db: Session, 
+    account: ApartmentAccount, 
+    amount: Decimal,
+    payment_id: int,
+    description: str | None = None
+) -> AccountTransaction:
+    """Remove credit from account (for voided payments) and create transaction record."""
+    # Update balance (subtract the amount)
+    new_balance = Decimal(str(account.balance)) - amount
+    account.balance = new_balance
+    
+    # Create transaction record
+    transaction = AccountTransaction(
+        account_id=account.id,
+        type=TransactionType.DEBIT,
+        amount=amount,
+        reference_type=TransactionReference.VOID,
+        reference_id=payment_id,
+        balance_after=new_balance,
+        description=description or f"Анулиране на плащане #{payment_id}"
+    )
+    db.add(transaction)
+    
+    return transaction
+
+
 @router.get("", response_model=PaymentList)
 async def list_payments(
     skip: int = 0,
     limit: int = 100,
     apartment_id: int | None = None,
     month: str | None = None,
+    include_voided: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List payments with optional filters."""
+    """List payments with optional filters.
+    
+    Args:
+        include_voided: If True, includes voided payments. Default False.
+    """
     query = db.query(Payment).order_by(desc(Payment.payment_date))
+    
+    # Filter by status - exclude voided by default
+    if not include_voided:
+        query = query.filter(Payment.status == PaymentStatus.ACTIVE)
     
     if apartment_id:
         query = query.filter(Payment.apartment_id == apartment_id)
@@ -276,6 +316,13 @@ async def get_payment_receipt(
     
     apartment = payment.apartment
     
+    # Don't allow receipts for voided payments
+    if payment.status == PaymentStatus.VOIDED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не може да се издаде разписка за анулирано плащане",
+        )
+    
     return ReceiptData(
         receipt_number=f"R-{payment.id:06d}",
         payment_id=payment.id,
@@ -287,4 +334,103 @@ async def get_payment_receipt(
         month=payment.month,
         collected_by=payment.collected_by.display_name if payment.collected_by else "N/A",
         notes=payment.notes,
+    )
+
+
+@router.post("/{payment_id}/void", response_model=PaymentVoidResponse)
+async def void_payment(
+    payment_id: int,
+    data: PaymentVoidRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Void (soft delete) a payment.
+    
+    ВАЖНО: Плащанията НИКОГА не се изтриват физически!
+    Тази операция:
+    - Маркира плащането като voided
+    - Записва причината за анулиране (задължителна)
+    - Записва кой и кога е анулирал
+    - Коригира баланса на сметката
+    - Създава audit log запис
+    """
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Плащането не е намерено",
+        )
+    
+    if payment.status == PaymentStatus.VOIDED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Плащането вече е анулирано",
+        )
+    
+    # Store state before void for audit
+    state_before = {
+        "id": payment.id,
+        "amount": float(payment.amount),
+        "month": payment.month,
+        "apartment_id": payment.apartment_id,
+        "status": payment.status.value,
+    }
+    
+    # Update payment status
+    voided_at = datetime.utcnow()
+    payment.status = PaymentStatus.VOIDED
+    payment.voided_at = voided_at
+    payment.voided_by_id = current_user.id
+    payment.void_reason = data.reason
+    
+    # Adjust account balance
+    account = get_or_create_account(db, payment.apartment_id)
+    transaction = remove_credit_from_account(
+        db=db,
+        account=account,
+        amount=Decimal(str(payment.amount)),
+        payment_id=payment.id,
+        description=f"Анулиране: {data.reason}"
+    )
+    
+    # Create audit log entry
+    create_audit_log(
+        db=db,
+        action=AuditAction.PAYMENT_VOIDED,
+        description=f"Анулирано плащане #{payment.id} за {payment.amount} лв. Причина: {data.reason}",
+        user_id=current_user.id,
+        user_email=current_user.username,
+        entity_type="payment",
+        entity_id=payment.id,
+        apartment_id=payment.apartment_id,
+        state_before=state_before,
+        state_after={
+            "id": payment.id,
+            "amount": float(payment.amount),
+            "month": payment.month,
+            "apartment_id": payment.apartment_id,
+            "status": "voided",
+            "voided_at": voided_at.isoformat(),
+            "voided_by_id": current_user.id,
+            "void_reason": data.reason,
+        },
+        extra_data={"reason": data.reason},
+        ip_address=request.client.host if request.client else None,
+        is_critical=True,
+    )
+    
+    db.commit()
+    db.refresh(payment)
+    db.refresh(account)
+    
+    return PaymentVoidResponse(
+        success=True,
+        message="Плащането е анулирано успешно",
+        payment_id=payment.id,
+        voided_at=voided_at,
+        voided_by_id=current_user.id,
+        void_reason=data.reason,
+        balance_adjustment=-float(payment.amount),
+        new_balance=float(account.balance),
     )

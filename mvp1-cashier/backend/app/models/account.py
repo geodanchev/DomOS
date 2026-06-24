@@ -31,6 +31,7 @@ class TransactionReference(str, Enum):
     OBLIGATION = "obligation"  # От задължение
     ADJUSTMENT = "adjustment"  # Ръчна корекция
     MIGRATION = "migration"    # От миграция на данни
+    VOID = "void"              # От анулиране на плащане
 
 
 class ApartmentAccount(Base, TimestampMixin):

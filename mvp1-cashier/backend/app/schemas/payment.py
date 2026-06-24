@@ -1,10 +1,18 @@
 """Payment schemas.
 
-Актуализирано за account-based система.
+Актуализирано за account-based система + void (soft delete) support.
 """
 
 from pydantic import BaseModel, Field
 from datetime import date, datetime
+from enum import Enum
+
+
+class PaymentStatus(str, Enum):
+    """Payment status enum for API."""
+    ACTIVE = "active"
+    VOIDED = "voided"
+    REFUNDED = "refunded"
 
 
 class PaymentBase(BaseModel):
@@ -29,10 +37,17 @@ class PaymentResponse(PaymentBase):
     created_at: datetime
     updated_at: datetime
     
+    # Status fields (audit-compliant)
+    status: PaymentStatus = PaymentStatus.ACTIVE
+    voided_at: datetime | None = None
+    voided_by_id: int | None = None
+    void_reason: str | None = None
+    
     # Nested info
     apartment_number: str | None = None
     owner_name: str | None = None
     collected_by_name: str | None = None
+    voided_by_name: str | None = None
     
     class Config:
         from_attributes = True
@@ -43,6 +58,39 @@ class PaymentList(BaseModel):
     items: list[PaymentResponse]
     total: int
 
+
+# === VOID SCHEMAS ===
+
+class PaymentVoidRequest(BaseModel):
+    """Request schema for voiding a payment.
+    
+    Анулиране на плащане - причината е ЗАДЪЛЖИТЕЛНА.
+    Плащането НЕ се изтрива, а се маркира като voided.
+    """
+    reason: str = Field(
+        ..., 
+        min_length=10, 
+        max_length=500,
+        description="Причина за анулиране (минимум 10 символа)"
+    )
+
+
+class PaymentVoidResponse(BaseModel):
+    """Response schema for void operation."""
+    success: bool
+    message: str
+    payment_id: int
+    voided_at: datetime
+    voided_by_id: int
+    void_reason: str
+    balance_adjustment: float = Field(
+        ..., 
+        description="Корекция на баланса (отрицателна стойност)"
+    )
+    new_balance: float = Field(..., description="Нов баланс след корекцията")
+
+
+# === EXISTING SCHEMAS ===
 
 class ReceiptData(BaseModel):
     """Data for printing a receipt."""
@@ -65,6 +113,7 @@ class RecentPayment(BaseModel):
     month: str
     payment_date: date
     payment_method: str
+    status: PaymentStatus = PaymentStatus.ACTIVE
     
     class Config:
         from_attributes = True

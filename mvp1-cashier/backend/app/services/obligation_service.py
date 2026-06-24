@@ -110,6 +110,11 @@ class ObligationService:
     
     def create(self, data: ObligationCreate) -> Obligation:
         """Създава ново задължение и дебитира сметката."""
+        # IMPORTANT: Get/create account BEFORE adding the obligation to avoid double-counting
+        # The _get_or_create_account calculates initial balance from existing obligations,
+        # so we must call it before the new obligation is added to the session.
+        account = self._get_or_create_account(data.apartment_id)
+        
         obligation = Obligation(
             type=data.type,
             apartment_id=data.apartment_id,
@@ -121,7 +126,6 @@ class ObligationService:
         self.db.flush()  # Get obligation ID
         
         # Debit account
-        account = self._get_or_create_account(data.apartment_id)
         self._debit_account(
             account=account,
             amount=Decimal(str(data.amount)),
@@ -261,6 +265,9 @@ class ObligationService:
             if existing:
                 continue
             
+            # IMPORTANT: Get/create account BEFORE adding the obligation to avoid double-counting
+            account = self._get_or_create_account(apt.id)
+            
             # Създаваме ново месечно задължение
             obligation = Obligation(
                 type=ObligationType.MONTHLY,
@@ -273,7 +280,6 @@ class ObligationService:
             self.db.flush()  # Get obligation ID
             
             # Debit account
-            account = self._get_or_create_account(apt.id)
             self._debit_account(
                 account=account,
                 amount=Decimal(str(apt.monthly_fee)),

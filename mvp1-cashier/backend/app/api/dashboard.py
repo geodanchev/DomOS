@@ -16,6 +16,7 @@ from app.models.account import ApartmentAccount
 from app.models.obligation import Obligation
 from app.models.payment import Payment
 from app.models.user import User
+from app.models.expense import Expense, ExpenseStatus
 from app.schemas.statistics import CashierDashboard, ApartmentStatus, FundBalance
 from app.api.auth import get_current_user
 
@@ -151,13 +152,24 @@ async def get_fund_balance(
 ):
     """Get building fund balance.
     
-    Колко пари има във фонда (общо събрани от началото).
+    Колко пари има във фонда:
+    - total_collected_all_time: общо събрани от всички плащания
+    - total_expenses: общо платени разходи (само със статус PAID)
+    - current_balance: налично салдо = събрани - разходи
     """
-    # Sum all payments
-    total = db.query(func.sum(Payment.amount)).scalar() or 0
+    # Sum all payments (income)
+    total_collected = db.query(func.sum(Payment.amount)).scalar() or Decimal("0")
+    
+    # Sum all paid expenses (outcome)
+    total_expenses = db.query(func.sum(Expense.amount)).filter(
+        Expense.status == ExpenseStatus.PAID
+    ).scalar() or Decimal("0")
+    
+    # Current balance = income - expenses
+    current_balance = Decimal(str(total_collected)) - Decimal(str(total_expenses))
     
     return FundBalance(
-        total_collected_all_time=float(total),
-        total_expenses=0,  # TODO: implement expenses tracking
-        current_balance=float(total),
+        total_collected_all_time=float(total_collected),
+        total_expenses=float(total_expenses),
+        current_balance=float(current_balance),
     )
