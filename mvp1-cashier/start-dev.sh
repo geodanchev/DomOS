@@ -1,12 +1,29 @@
 #!/bin/bash
 # DomOS Cashier MVP - Development Start Script
-# Usage: ./start-dev.sh
+# Usage: ./start-dev.sh [--fresh]
 # Starts DB + Backend in Docker, Frontend locally with hot reload
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Parse command line arguments
+FRESH_INSTALL=false
+
+for arg in "$@"; do
+    case $arg in
+        --fresh)
+            FRESH_INSTALL=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Unknown argument: $arg${NC}"
+            echo "Usage: $0 [--fresh]"
+            exit 1
+            ;;
+    esac
+done
 
 echo "🚀 Starting DomOS Cashier MVP Development Environment..."
 echo ""
@@ -29,6 +46,40 @@ echo -e "${GREEN}✓ Docker is running${NC}"
 echo ""
 echo "📦 Starting Database and Backend containers..."
 docker compose -f docker-compose.dev.yml up -d db backend
+
+# Wait for database to be ready
+echo ""
+echo "⏳ Waiting for database to be ready..."
+MAX_DB_RETRIES=30
+DB_RETRY_COUNT=0
+while [ $DB_RETRY_COUNT -lt $MAX_DB_RETRIES ]; do
+    if docker exec domos-db-dev pg_isready -U postgres -d domos_cashier > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Database is ready${NC}"
+        break
+    fi
+    DB_RETRY_COUNT=$((DB_RETRY_COUNT + 1))
+    if [ $DB_RETRY_COUNT -eq $MAX_DB_RETRIES ]; then
+        echo -e "${RED}❌ Database failed to become ready${NC}"
+        exit 1
+    fi
+    sleep 1
+done
+
+# Check if database is initialized
+echo ""
+echo "🔍 Checking database initialization..."
+TABLE_COUNT=$(docker exec domos-db-dev psql -U postgres -d domos_cashier -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
+
+if [ "$FRESH_INSTALL" = true ]; then
+    echo -e "${YELLOW}🔄 Fresh install requested - running setup-db.sh --fresh${NC}"
+    ./setup-db.sh --fresh
+elif [ "$TABLE_COUNT" = "0" ]; then
+    echo -e "${YELLOW}⚠ Database not initialized (no tables found)${NC}"
+    echo -e "${YELLOW}  Running initial database setup...${NC}"
+    ./setup-db.sh
+else
+    echo -e "${GREEN}✓ Database already initialized ($TABLE_COUNT tables found)${NC}"
+fi
 
 # Wait for backend to be healthy
 echo ""

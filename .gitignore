@@ -43,9 +43,10 @@ venv.bak/
 .env.local
 .env.*.local
 *.env
+.env.production
 !.env.example
 !.env.docker
-!.env.production
+!.env.production.example
 
 # Database
 *.db
@@ -92,4 +93,3 @@ Thumbs.db
 
 # Agent Zero project files (optional - keep or remove based on preference)
 # .a0proj/
-=4.0.0

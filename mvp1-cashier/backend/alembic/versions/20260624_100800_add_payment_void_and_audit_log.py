@@ -1,7 +1,7 @@
 """Add payment void fields and audit_logs table.
 
-Revision ID: a1b2c3d4e5f6
-Revises: 20260624_100400_add_expenses_table
+Revision ID: f7g8h9i0j1k2
+Revises: a1b2c3d4e5f6
 Create Date: 2026-06-24 10:08:00.000000
 
 Changes:
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = 'a1b2c3d4e5f6'
-down_revision = '20260624_100400_add_expenses_table'
+revision = 'f7g8h9i0j1k2'
+down_revision = 'a1b2c3d4e5f6'
 branch_labels = None
 depends_on = None
 
