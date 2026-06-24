@@ -71,4 +71,6 @@ echo -e "${GREEN}═════════════════════
 echo ""
 
 # Start frontend with hot reload
+# Set proxy target to localhost since frontend runs outside Docker
+export VITE_PROXY_TARGET=http://localhost:8000
 exec npm run dev
