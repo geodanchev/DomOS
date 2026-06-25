@@ -34,7 +34,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const amountOwed = apartment.balance < 0 ? Math.abs(apartment.balance) : 0;
   
   const [amount, setAmount] = useState(amountOwed > 0 ? amountOwed.toFixed(2) : '');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,7 +48,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         apartment_id: apartment.apartment_id,
         amount: parseFloat(amount),
         month: currentMonth,
-        payment_method: paymentMethod,
+        payment_method: 'cash',
         notes: notes || undefined,
       });
       toast({
@@ -84,12 +83,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         { label: '50 лв', value: 50 },
         { label: '100 лв', value: 100 },
       ];
-
-  const paymentMethods = [
-    { value: 'cash', label: '💵 В брой' },
-    { value: 'bank', label: '🏦 Банка' },
-    { value: 'card', label: '💳 Карта' },
-  ];
 
   return (
     <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
@@ -161,28 +154,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               required
               autoFocus
             />
-          </div>
-
-          {/* Payment method */}
-          <div className="space-y-2">
-            <Label>Начин на плащане:</Label>
-            <div className="flex gap-2">
-              {paymentMethods.map((method) => (
-                <Button
-                  key={method.value}
-                  type="button"
-                  variant="outline"
-                  className={cn(
-                    "flex-1",
-                    paymentMethod === method.value &&
-                      "border-primary bg-primary/10 text-primary"
-                  )}
-                  onClick={() => setPaymentMethod(method.value)}
-                >
-                  {method.label}
-                </Button>
-              ))}
-            </div>
           </div>
 
           {/* Notes */}

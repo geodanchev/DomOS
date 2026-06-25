@@ -164,7 +164,7 @@ export const obligationsApi = {
   },
   
   create: async (data: ObligationCreate): Promise<Obligation> => {
-    const response = await api.post<Obligation>('/obligations', data);
+    const response = await api.post<Obligation>('/obligations/', data);
     return response.data;
   },
   

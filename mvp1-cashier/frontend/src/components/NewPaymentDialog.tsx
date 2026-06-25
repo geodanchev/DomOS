@@ -38,7 +38,6 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
   const [selectedApartmentId, setSelectedApartmentId] = useState<string>('');
   const [summary, setSummary] = useState<ApartmentPaymentSummary | null>(null);
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [isLoadingApartments, setIsLoadingApartments] = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
@@ -116,7 +115,7 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
         apartment_id: parseInt(selectedApartmentId),
         amount: parsedAmount,
         month: currentMonth,
-        payment_method: paymentMethod,
+        payment_method: 'cash', // Fixed to cash only
         notes: notes || undefined,
       });
       
@@ -144,7 +143,6 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
     setSelectedApartmentId('');
     setSummary(null);
     setAmount('');
-    setPaymentMethod('cash');
     setNotes('');
     setError('');
     onClose();
@@ -164,15 +162,27 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
     return `${months[parseInt(m) - 1]} ${year}`;
   };
 
-  const paymentMethods = [
-    { value: 'cash', label: '💵 В брой' },
-    { value: 'bank', label: '🏦 Банка' },
-    { value: 'card', label: '💳 Карта' },
-  ];
+  // Calculate amount owed (positive when they owe money)
+  const amountOwed = summary && summary.balance < 0 ? Math.abs(summary.balance) : 0;
+
+  // Quick amounts - show "Цяла сума" if they owe money
+  const quickAmounts = amountOwed > 0 
+    ? [
+        { label: 'Цяла сума', value: amountOwed },
+        { label: '10 лв', value: 10 },
+        { label: '20 лв', value: 20 },
+        { label: '50 лв', value: 50 },
+      ]
+    : [
+        { label: '10 лв', value: 10 },
+        { label: '20 лв', value: 20 },
+        { label: '50 лв', value: 50 },
+        { label: '100 лв', value: 100 },
+      ];
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>💵 Ново плащане</DialogTitle>
         </DialogHeader>
@@ -223,15 +233,11 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
                   <div className="text-muted-foreground">Баланс:</div>
                   <div className={cn(
                     "font-bold",
-                    summary.balance < 0 && "text-destructive",
-                    summary.balance > 0 && "text-blue-600",
-                    summary.balance === 0 && "text-green-600"
+                    summary.balance < 0 ? "text-red-600" : summary.balance > 0 ? "text-blue-600" : "text-green-600"
                   )}>
-                    {summary.balance < 0
-                      ? `Дължи ${Math.abs(summary.balance).toFixed(2)} лв`
-                      : summary.balance > 0
-                        ? `Авансово ${summary.balance.toFixed(2)} лв`
-                        : 'Изплатен'}
+                    {summary.balance.toFixed(2)} лв
+                    {summary.balance < 0 && " (дължи)"}
+                    {summary.balance > 0 && " (авансово)"}
                   </div>
                 </div>
               </div>
@@ -263,19 +269,23 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
                 </div>
               )}
 
-              {/* Quick fill button */}
-              {summary.balance < 0 && (
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setAmount(Math.abs(summary.balance).toFixed(2))}
-                  >
-                    Въведи дължимата сума ({Math.abs(summary.balance).toFixed(2)} лв)
-                  </Button>
+              {/* Quick amounts */}
+              <div className="space-y-2">
+                <Label>Бързи суми:</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {quickAmounts.map((qa) => (
+                    <Button
+                      key={qa.label}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setAmount(qa.value.toFixed(2))}
+                    >
+                      {qa.label}
+                    </Button>
+                  ))}
                 </div>
-              )}
+              </div>
 
               {/* Amount input */}
               <div className="space-y-2">
@@ -290,29 +300,8 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
                   className="text-2xl font-bold text-center h-14"
                   placeholder="0.00"
                   required
+                  autoFocus
                 />
-              </div>
-
-              {/* Payment method */}
-              <div className="space-y-2">
-                <Label>Начин на плащане:</Label>
-                <div className="flex gap-2">
-                  {paymentMethods.map((method) => (
-                    <Button
-                      key={method.value}
-                      type="button"
-                      variant="outline"
-                      className={cn(
-                        "flex-1",
-                        paymentMethod === method.value &&
-                          "border-primary bg-primary/10 text-primary"
-                      )}
-                      onClick={() => setPaymentMethod(method.value)}
-                    >
-                      {method.label}
-                    </Button>
-                  ))}
-                </div>
               </div>
 
               {/* Notes */}
