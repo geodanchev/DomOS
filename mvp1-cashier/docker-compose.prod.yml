@@ -1,11 +1,12 @@
 # DomOS Cashier MVP - Production Docker Compose with HTTPS (Traefik)
-# Usage: docker compose -f docker-compose.prod.yml up -d
+# Usage: docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 #
 # Prerequisites:
 # 1. Set your domain in .env: DOMAIN=yourdomain.com
 # 2. Set your email in .env: ACME_EMAIL=admin@yourdomain.com
-# 3. Point your domain DNS to this server's IP
-# 4. Open ports 80 and 443 on your firewall
+# 3. Configure rate limits (optional): RATE_LIMIT_API_AVG, RATE_LIMIT_AUTH_AVG, etc.
+# 4. Point your domain DNS to this server's IP
+# 5. Open ports 80 and 443 on your firewall
 
 services:
   # Traefik Reverse Proxy with automatic HTTPS
@@ -34,14 +35,25 @@ services:
       # Uncomment for staging/testing (avoid rate limits)
       # - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
       # Logging
-      - "--log.level=INFO"
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+      - "--log.format=json"
       - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.bufferingsize=100"
+      - "--accesslog.fields.defaultmode=keep"
+      - "--accesslog.fields.names.ClientUsername=drop"
+      - "--accesslog.fields.headers.defaultmode=drop"
+      - "--accesslog.fields.headers.names.User-Agent=keep"
+      - "--accesslog.fields.headers.names.X-Forwarded-For=keep"
+      - "--accesslog.fields.headers.names.X-Real-Ip=keep"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_letsencrypt:/letsencrypt
+      - traefik_logs:/var/log/traefik
     networks:
       - domos-network-prod
     labels:
@@ -105,19 +117,65 @@ services:
       - domos-network-prod
     labels:
       - "traefik.enable=true"
-      # API routes
+      
+      # ============================================
+      # Rate Limiting Middlewares (configurable via environment)
+      # ============================================
+      # General API rate limit (default: 100 req/min, burst 50)
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.average=${RATE_LIMIT_API_AVG:-100}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.burst=${RATE_LIMIT_API_BURST:-50}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.period=${RATE_LIMIT_API_PERIOD:-1m}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.sourceCriterion.ipStrategy.depth=${RATE_LIMIT_IP_DEPTH:-1}"
+      
+      # Strict auth rate limit for brute force protection (default: 5 req/min, burst 10)
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.average=${RATE_LIMIT_AUTH_AVG:-5}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.burst=${RATE_LIMIT_AUTH_BURST:-10}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.period=${RATE_LIMIT_AUTH_PERIOD:-1m}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.sourceCriterion.ipStrategy.depth=${RATE_LIMIT_IP_DEPTH:-1}"
+      
+      # Backend security headers
+      - "traefik.http.middlewares.backend-security.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.backend-security.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.backend-security.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.backend-security.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.backend-security.headers.frameDeny=true"
+      - "traefik.http.middlewares.backend-security.headers.customResponseHeaders.X-Robots-Tag=noindex,nofollow"
+      
+      # ============================================
+      # Auth routes (stricter rate limit)
+      # ============================================
+      - "traefik.http.routers.backend-auth.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.backend-auth.entrypoints=websecure"
+      - "traefik.http.routers.backend-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-auth.middlewares=auth-ratelimit,backend-security"
+      - "traefik.http.routers.backend-auth.priority=10"
+      
+      # ============================================
+      # General API routes (standard rate limit)
+      # ============================================
       - "traefik.http.routers.backend.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api`)"
       - "traefik.http.routers.backend.entrypoints=websecure"
       - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend.middlewares=api-ratelimit,backend-security"
+      - "traefik.http.routers.backend.priority=5"
       - "traefik.http.services.backend.loadbalancer.server.port=8000"
-      # Health endpoint
+      
+      # ============================================
+      # Health endpoint (no rate limit)
+      # ============================================
       - "traefik.http.routers.backend-health.rule=Host(`${DOMAIN:-localhost}`) && Path(`/health`)"
       - "traefik.http.routers.backend-health.entrypoints=websecure"
       - "traefik.http.routers.backend-health.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-health.priority=15"
+      
+      # ============================================
       # API Docs (optional - remove in production if not needed)
+      # ============================================
       - "traefik.http.routers.backend-docs.rule=Host(`${DOMAIN:-localhost}`) && (PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`))"
       - "traefik.http.routers.backend-docs.entrypoints=websecure"
       - "traefik.http.routers.backend-docs.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-docs.middlewares=api-ratelimit,backend-security"
+      - "traefik.http.routers.backend-docs.priority=8"
 
   # React Frontend (Nginx)
   frontend:
@@ -170,6 +228,8 @@ volumes:
   postgres_data_prod:
     driver: local
   traefik_letsencrypt:
+    driver: local
+  traefik_logs:
     driver: local
 
 # Network configuration
