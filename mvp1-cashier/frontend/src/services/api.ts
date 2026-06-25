@@ -228,4 +228,38 @@ export const dashboardApi = {
   },
 };
 
+// =============================================================================
+// Receipts API
+// =============================================================================
+
+export const receiptsApi = {
+  downloadPdf: async (receiptId: number): Promise<void> => {
+    const response = await api.get(`/receipts/${receiptId}/pdf`, {
+      responseType: 'blob',
+    });
+    
+    // Create blob URL and trigger download
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Extract filename from Content-Disposition header or use default
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = 'receipt.pdf';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename=(.+)/);
+      if (match) {
+        filename = match[1].replace(/"/g, '');
+      }
+    }
+    
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+};
+
 export default api;

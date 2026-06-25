@@ -18,6 +18,8 @@ from app.models.obligation import Obligation
 from app.models.account import ApartmentAccount, AccountTransaction, TransactionType, TransactionReference
 from app.models.user import User
 from app.models.audit_log import AuditAction, create_audit_log
+from app.models.receipt import Receipt
+from app.api.receipts import generate_receipt_number
 from app.schemas.payment import (
     PaymentCreate, 
     PaymentResponse, 
@@ -153,6 +155,11 @@ async def list_payments(
             item.owner_name = p.apartment.owner_name
         if p.collected_by:
             item.collected_by_name = p.collected_by.display_name
+        # Add receipt_id (first non-copy receipt)
+        if p.receipts:
+            original_receipt = next((r for r in p.receipts if not r.is_copy), None)
+            if original_receipt:
+                item.receipt_id = original_receipt.id
         items.append(item)
     
     return PaymentList(items=items, total=total)
@@ -264,14 +271,28 @@ async def create_payment(
         description=f"Плащане за {data.month}" if data.month else None
     )
     
+    # Create receipt automatically
+    receipt_number = generate_receipt_number(db)
+    receipt = Receipt(
+        receipt_number=receipt_number,
+        payment_id=payment.id,
+        is_copy=False,
+        original_receipt_id=None,
+        issued_at=datetime.utcnow(),
+        issued_by_id=current_user.id,
+    )
+    db.add(receipt)
+    
     db.commit()
     db.refresh(payment)
+    db.refresh(receipt)
     
     # Build response
     response = PaymentResponse.model_validate(payment)
     response.apartment_number = apartment.number
     response.owner_name = apartment.owner_name
     response.collected_by_name = current_user.display_name
+    response.receipt_id = receipt.id
     
     return response
 

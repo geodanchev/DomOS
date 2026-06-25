@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { paymentsApi, apartmentsApi } from '../services/api';
+import { paymentsApi, apartmentsApi, receiptsApi } from '../services/api';
 import type { Payment, Apartment } from '../types';
 import NewPaymentDialog from '../components/NewPaymentDialog';
 import { Button } from '@/components/ui/button';
@@ -84,6 +84,15 @@ const Payments: React.FC = () => {
   };
 
   const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+
+  const handleDownloadReceipt = async (receiptId: number) => {
+    try {
+      await receiptsApi.downloadPdf(receiptId);
+    } catch (err) {
+      console.error('Error downloading receipt:', err);
+      setError('Грешка при изтегляне на разписката');
+    }
+  };
 
   // Generate month options (last 12 months)
   const getMonthOptions = () => {
@@ -223,6 +232,7 @@ const Payments: React.FC = () => {
                   <TableHead className="text-right">Сума</TableHead>
                   <TableHead>Начин</TableHead>
                   <TableHead>Приел</TableHead>
+                  <TableHead className="text-center">Разписка</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -255,6 +265,20 @@ const Payments: React.FC = () => {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {payment.collected_by_name || '-'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {payment.receipt_id ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownloadReceipt(payment.receipt_id!)}
+                            className="h-8"
+                          >
+                            📄 Свали
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">-</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

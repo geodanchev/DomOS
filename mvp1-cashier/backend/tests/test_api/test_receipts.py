@@ -219,3 +219,165 @@ class TestReceiptPDF:
         """Грешка 404 за PDF на несъществуваща разписка."""
         response = client.get("/api/receipts/99999/pdf", headers=cashier_headers)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestAutoCreateReceiptOnPayment:
+    """Тестове за автоматично създаване на разписка при плащане."""
+
+    def test_receipt_created_automatically_when_payment_made(
+        self, client, test_db, sample_apartment, cashier_headers
+    ):
+        """При създаване на плащане автоматично се създава оригинална разписка."""
+        from app.models.receipt import Receipt
+        
+        # Създаваме плащане
+        payment_data = {
+            "apartment_id": sample_apartment.id,
+            "amount": 15.00,
+            "month": "2026-06",
+            "payment_method": "cash",
+        }
+        response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        payment = response.json()
+        
+        # Проверяваме че разписка е създадена за това плащане
+        receipt = test_db.query(Receipt).filter(
+            Receipt.payment_id == payment["id"],
+            Receipt.is_copy == False
+        ).first()
+        
+        assert receipt is not None, "Receipt should be created automatically"
+        assert receipt.is_copy is False
+        assert receipt.original_receipt_id is None
+        assert receipt.receipt_number is not None
+        assert receipt.payment_id == payment["id"]
+
+    def test_receipt_number_format_on_auto_create(
+        self, client, test_db, sample_apartment, cashier_headers
+    ):
+        """Автоматично създадената разписка има правилен формат на номера (YYYY-NNNNNN)."""
+        from app.models.receipt import Receipt
+        
+        payment_data = {
+            "apartment_id": sample_apartment.id,
+            "amount": 20.00,
+            "month": "2026-07",
+            "payment_method": "bank",
+        }
+        response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        payment = response.json()
+        
+        receipt = test_db.query(Receipt).filter(
+            Receipt.payment_id == payment["id"]
+        ).first()
+        
+        assert receipt is not None
+        # Проверяваме формата YYYY-NNNNNN
+        current_year = date.today().year
+        assert receipt.receipt_number.startswith(f"{current_year}-")
+        seq_part = receipt.receipt_number.split("-")[1]
+        assert len(seq_part) == 6
+        assert seq_part.isdigit()
+
+    def test_multiple_payments_create_sequential_receipts(
+        self, client, test_db, multiple_apartments, cashier_headers
+    ):
+        """Множество плащания създават разписки с последователни номера."""
+        from app.models.receipt import Receipt
+        
+        receipt_numbers = []
+        for i, apt in enumerate(multiple_apartments[:3]):
+            payment_data = {
+                "apartment_id": apt.id,
+                "amount": 10.00 + i,
+                "month": "2026-08",
+                "payment_method": "cash",
+            }
+            response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+            assert response.status_code == status.HTTP_201_CREATED
+            payment = response.json()
+            
+            receipt = test_db.query(Receipt).filter(
+                Receipt.payment_id == payment["id"]
+            ).first()
+            assert receipt is not None
+            receipt_numbers.append(receipt.receipt_number)
+        
+        # Проверяваме че номерата са последователни
+        seq_nums = [int(rn.split("-")[1]) for rn in receipt_numbers]
+        for i in range(1, len(seq_nums)):
+            assert seq_nums[i] == seq_nums[i-1] + 1, "Receipt numbers should be sequential"
+
+    def test_receipt_issued_by_current_user(
+        self, client, test_db, sample_apartment, cashier_user, cashier_headers
+    ):
+        """Автоматично създадената разписка е издадена от текущия потребител."""
+        from app.models.receipt import Receipt
+        
+        payment_data = {
+            "apartment_id": sample_apartment.id,
+            "amount": 25.00,
+            "month": "2026-09",
+            "payment_method": "cash",
+        }
+        response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        payment = response.json()
+        
+        receipt = test_db.query(Receipt).filter(
+            Receipt.payment_id == payment["id"]
+        ).first()
+        
+        assert receipt is not None
+        assert receipt.issued_by_id == cashier_user.id
+
+    def test_cannot_create_duplicate_receipt_for_same_payment(
+        self, client, test_db, sample_apartment, cashier_headers
+    ):
+        """Не може да се създаде втора оригинална разписка за същото плащане."""
+        # Създаваме плащане (автоматично се създава разписка)
+        payment_data = {
+            "apartment_id": sample_apartment.id,
+            "amount": 30.00,
+            "month": "2026-10",
+            "payment_method": "cash",
+        }
+        response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        payment = response.json()
+        
+        # Опитваме да създадем втора разписка за същото плащане
+        response = client.post(
+            "/api/receipts",
+            json={"payment_id": payment["id"]},
+            headers=cashier_headers
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "already exists" in response.json()["detail"].lower()
+
+    def test_payment_response_includes_receipt_id(
+        self, client, test_db, sample_apartment, cashier_headers
+    ):
+        """Payment response включва receipt_id за директно сваляне на PDF."""
+        from app.models.receipt import Receipt
+        
+        payment_data = {
+            "apartment_id": sample_apartment.id,
+            "amount": 45.00,
+            "month": "2026-11",
+            "payment_method": "cash",
+        }
+        response = client.post("/api/payments", json=payment_data, headers=cashier_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        payment = response.json()
+        
+        # Проверяваме че receipt_id е включен в response
+        assert "receipt_id" in payment
+        assert payment["receipt_id"] is not None
+        
+        # Проверяваме че receipt_id сочи към валидна разписка
+        receipt = test_db.query(Receipt).filter(Receipt.id == payment["receipt_id"]).first()
+        assert receipt is not None
+        assert receipt.payment_id == payment["id"]

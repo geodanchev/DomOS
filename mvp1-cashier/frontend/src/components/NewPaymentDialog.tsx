@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { paymentsApi, apartmentsApi } from '../services/api';
-import type { Apartment, ApartmentPaymentSummary, RecentPayment } from '../types';
+import { paymentsApi, apartmentsApi, receiptsApi } from '../services/api';
+import type { Apartment, ApartmentPaymentSummary, RecentPayment, Payment } from '../types';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Download, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -43,6 +43,11 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  
+  // Success state
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [createdPayment, setCreatedPayment] = useState<Payment | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Load apartments on open
   useEffect(() => {
@@ -111,7 +116,7 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
       const now = new Date();
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       
-      await paymentsApi.create({
+      const payment = await paymentsApi.create({
         apartment_id: parseInt(selectedApartmentId),
         amount: parsedAmount,
         month: currentMonth,
@@ -119,13 +124,10 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
         notes: notes || undefined,
       });
       
-      toast({
-        title: '✅ Плащането е записано',
-        description: `Ап. ${summary?.apartment_number} - ${parsedAmount.toFixed(2)} лв`,
-        variant: 'success',
-      });
+      // Store payment and show success dialog
+      setCreatedPayment(payment);
+      setShowSuccess(true);
       onSuccess();
-      handleClose();
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || 'Грешка при запис на плащането';
       setError(errorMessage);
@@ -145,7 +147,27 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
     setAmount('');
     setNotes('');
     setError('');
+    setShowSuccess(false);
+    setCreatedPayment(null);
+    setIsDownloading(false);
     onClose();
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!createdPayment?.receipt_id) return;
+    
+    try {
+      setIsDownloading(true);
+      await receiptsApi.downloadPdf(createdPayment.receipt_id);
+    } catch (err) {
+      toast({
+        title: '❌ Грешка',
+        description: 'Неуспешно изтегляне на разписката',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const formatDate = (dateStr: string): string => {
@@ -183,11 +205,64 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>💵 Ново плащане</DialogTitle>
-        </DialogHeader>
+        {showSuccess ? (
+          // Success view with download button
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-6 w-6 text-green-500" />
+                Плащането е записано!
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-green-700">
+                  {createdPayment?.amount?.toFixed(2)} лв
+                </div>
+                <div className="text-sm text-green-600 mt-1">
+                  Ап. {createdPayment?.apartment_number} - {createdPayment?.owner_name}
+                </div>
+              </div>
+              
+              {createdPayment?.receipt_id && (
+                <Button
+                  onClick={handleDownloadReceipt}
+                  disabled={isDownloading}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  size="lg"
+                >
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Изтегляне...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-5 w-5 mr-2" />
+                      Свали разписка (PDF)
+                    </>
+                  )}
+                </Button>
+              )}
+              
+              <Button
+                onClick={handleClose}
+                variant="outline"
+                className="w-full"
+              >
+                Затвори
+              </Button>
+            </div>
+          </>
+        ) : (
+          // Payment form
+          <>
+            <DialogHeader>
+              <DialogTitle>💵 Ново плащане</DialogTitle>
+            </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
           {/* Apartment selector */}
           <div className="space-y-2">
             <Label>Изберете апартамент:</Label>
@@ -344,6 +419,8 @@ const NewPaymentDialog: React.FC<NewPaymentDialogProps> = ({
             </Button>
           </DialogFooter>
         </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

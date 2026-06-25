@@ -49,6 +49,9 @@ class PaymentResponse(PaymentBase):
     collected_by_name: str | None = None
     voided_by_name: str | None = None
     
+    # Receipt info (auto-created with payment)
+    receipt_id: int | None = None
+    
     class Config:
         from_attributes = True
 

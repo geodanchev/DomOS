@@ -66,6 +66,7 @@ export interface Payment {
   apartment_number?: string;
   owner_name?: string;
   collected_by_name?: string;
+  receipt_id?: number | null;  // Auto-created receipt ID
 }
 
 export interface PaymentCreate {
