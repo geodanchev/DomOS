@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, UserLogin, Token
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_token
 
@@ -42,6 +42,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency that requires the current user to be an admin.
+    
+    Use this to protect admin-only endpoints.
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Само администратори имат достъп до тази функция",
+        )
+    return current_user
+
+
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """Login and get access token."""
@@ -70,8 +83,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user (admin only in production)."""
+async def register(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),  # SECURITY: Admin-only
+):
+    """Register a new user.
+    
+    SECURITY: This endpoint requires admin authentication.
+    Only authenticated administrators can create new users.
+    """
     # Check if username exists
     existing = db.query(User).filter(User.username == user_data.username).first()
     if existing:

@@ -87,10 +87,13 @@ class TestLogin:
 
 
 class TestRegister:
-    """Tests for POST /api/auth/register endpoint."""
+    """Tests for POST /api/auth/register endpoint.
     
-    def test_register_success(self, client: TestClient, test_db):
-        """Should create new user successfully."""
+    SECURITY: As of security fix 2026-06-25, /register requires admin authentication.
+    """
+    
+    def test_register_requires_authentication(self, client: TestClient, test_db):
+        """Should return 401 when not authenticated."""
         response = client.post(
             "/api/auth/register",
             json={
@@ -101,6 +104,38 @@ class TestRegister:
             },
         )
         
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+    
+    def test_register_requires_admin(self, client: TestClient, cashier_headers: dict):
+        """Should return 403 when authenticated as non-admin."""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "newuser",
+                "password": "newpass123",
+                "display_name": "New User",
+                "role": "viewer",
+            },
+            headers=cashier_headers,
+        )
+        
+        assert response.status_code == 403
+        assert "администратори" in response.json()["detail"].lower()
+    
+    def test_register_success(self, client: TestClient, admin_headers: dict):
+        """Should create new user successfully when authenticated as admin."""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "newuser",
+                "password": "newpass123",
+                "display_name": "New User",
+                "role": "viewer",
+            },
+            headers=admin_headers,
+        )
+        
         assert response.status_code == 201
         data = response.json()
         assert data["username"] == "newuser"
@@ -108,7 +143,7 @@ class TestRegister:
         assert data["role"] == "viewer"
         assert "password_hash" not in data
     
-    def test_register_duplicate_username(self, client: TestClient, cashier_user: User):
+    def test_register_duplicate_username(self, client: TestClient, cashier_user: User, admin_headers: dict):
         """Should return 400 for duplicate username."""
         response = client.post(
             "/api/auth/register",
@@ -117,12 +152,13 @@ class TestRegister:
                 "password": "anotherpass",
                 "display_name": "Another Cecka",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 400
         assert "вече съществува" in response.json()["detail"]
     
-    def test_register_default_role(self, client: TestClient, test_db):
+    def test_register_default_role(self, client: TestClient, admin_headers: dict):
         """Should use CASHIER as default role."""
         response = client.post(
             "/api/auth/register",
@@ -131,12 +167,13 @@ class TestRegister:
                 "password": "password123",
                 "display_name": "Default Role User",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 201
         assert response.json()["role"] == "cashier"
     
-    def test_register_admin_role(self, client: TestClient, test_db):
+    def test_register_admin_role(self, client: TestClient, admin_headers: dict):
         """Should allow creating admin user."""
         response = client.post(
             "/api/auth/register",
@@ -146,12 +183,13 @@ class TestRegister:
                 "display_name": "New Admin",
                 "role": "admin",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 201
         assert response.json()["role"] == "admin"
     
-    def test_register_missing_username(self, client: TestClient):
+    def test_register_missing_username(self, client: TestClient, admin_headers: dict):
         """Should return 422 for missing username."""
         response = client.post(
             "/api/auth/register",
@@ -159,11 +197,12 @@ class TestRegister:
                 "password": "password",
                 "display_name": "No Username",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 422
     
-    def test_register_missing_password(self, client: TestClient):
+    def test_register_missing_password(self, client: TestClient, admin_headers: dict):
         """Should return 422 for missing password."""
         response = client.post(
             "/api/auth/register",
@@ -171,11 +210,12 @@ class TestRegister:
                 "username": "nopass",
                 "display_name": "No Password",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 422
     
-    def test_register_bulgarian_display_name(self, client: TestClient, test_db):
+    def test_register_bulgarian_display_name(self, client: TestClient, admin_headers: dict):
         """Should handle Bulgarian characters in display name."""
         response = client.post(
             "/api/auth/register",
@@ -184,6 +224,7 @@ class TestRegister:
                 "password": "password123",
                 "display_name": "Георги Петров",
             },
+            headers=admin_headers,
         )
         
         assert response.status_code == 201
@@ -239,9 +280,9 @@ class TestMe:
 class TestAuthFlow:
     """Integration tests for complete auth flow."""
     
-    def test_register_then_login(self, client: TestClient, test_db):
-        """Should be able to register and then login."""
-        # Register
+    def test_register_then_login(self, client: TestClient, admin_headers: dict):
+        """Should be able to register (as admin) and then login."""
+        # Register (requires admin authentication)
         register_response = client.post(
             "/api/auth/register",
             json={
@@ -249,6 +290,7 @@ class TestAuthFlow:
                 "password": "flowpass123",
                 "display_name": "Flow Test User",
             },
+            headers=admin_headers,
         )
         assert register_response.status_code == 201
         
