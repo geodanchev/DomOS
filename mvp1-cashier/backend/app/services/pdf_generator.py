@@ -17,6 +17,10 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
+# Регистрираме кирилични шрифтове
+pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+
 
 def get_payment_method_label(method: str) -> str:
     """Превежда метода на плащане на български."""
@@ -79,17 +83,17 @@ def generate_receipt_pdf(
     c = canvas.Canvas(buffer, pagesize=(width, height))
     
     # Заглавие
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont("DejaVuSans-Bold", 16)
     title = "Р А З П И С К А"
     c.drawCentredString(width / 2, height - 1.5 * cm, title)
     
     # Номер на разписката
-    c.setFont("Helvetica-Bold", 12)
+    c.setFont("DejaVuSans-Bold", 12)
     c.drawCentredString(width / 2, height - 2.2 * cm, f"№ {receipt_number}")
     
     # Маркер за копие
     if is_copy:
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont("DejaVuSans-Bold", 14)
         c.setFillColor(colors.red)
         c.drawCentredString(width / 2, height - 3 * cm, "*** КОПИЕ ***")
         c.setFillColor(colors.black)
@@ -98,7 +102,7 @@ def generate_receipt_pdf(
         y_start = height - 3.5 * cm
     
     # Данни
-    c.setFont("Helvetica", 10)
+    c.setFont("DejaVuSans", 10)
     line_height = 0.6 * cm
     y = y_start
     
@@ -125,12 +129,12 @@ def generate_receipt_pdf(
     y -= line_height
     
     # Сума (по-голям шрифт)
-    c.setFont("Helvetica-Bold", 14)
+    c.setFont("DejaVuSans-Bold", 14)
     c.drawString(0.5 * cm, y, f"Сума: {amount:.2f} лв.")
     y -= line_height * 1.5
     
     # Метод на плащане
-    c.setFont("Helvetica", 10)
+    c.setFont("DejaVuSans", 10)
     c.drawString(0.5 * cm, y, f"Начин: {get_payment_method_label(payment_method)}")
     y -= line_height
     
