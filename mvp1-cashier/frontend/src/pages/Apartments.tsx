@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apartmentsApi } from '../services/api';
 import type { Apartment, ApartmentCreate, ApartmentUpdate } from '../types';
+import { PermissionGate } from '../components/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +33,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Building2, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 
 const Apartments: React.FC = () => {
   const [apartments, setApartments] = useState<Apartment[]>([]);
@@ -201,41 +202,43 @@ const Apartments: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Building2 className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">Домова книга</h1>
-            <p className="text-muted-foreground">
-              {apartments.length} апартамент{apartments.length !== 1 ? 'а' : ''}
-            </p>
-          </div>
-        </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Добави апартамент
-        </Button>
+      {/* Title */}
+      <h1 className="text-2xl font-bold">📚 Домова книга</h1>
+
+      {/* Buttons */}
+      <div className="flex gap-2 flex-wrap">
+        <PermissionGate feature="apartments" action="create">
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Добави апартамент</span>
+            <span className="sm:hidden">Добави</span>
+          </Button>
+        </PermissionGate>
       </div>
 
-      {/* Apartments Table */}
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-primary/10 rounded-lg p-4">
+          <div className="text-sm text-muted-foreground">Общо апартаменти</div>
+          <div className="text-2xl font-bold text-primary">{apartments.length}</div>
+        </div>
+      </div>
+
+      {/* Apartments Table - Mobile Optimized */}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-20">№</TableHead>
-              <TableHead className="w-20">Етаж</TableHead>
+              <TableHead className="w-16">№</TableHead>
               <TableHead>Собственик</TableHead>
-              <TableHead className="w-24 text-center">Живущи</TableHead>
-              <TableHead className="w-32 text-right">Месечна такса</TableHead>
-              <TableHead>Бележки</TableHead>
-              <TableHead className="w-24 text-right">Действия</TableHead>
+              <TableHead className="text-right hidden sm:table-cell">Месечна такса</TableHead>
+              <TableHead className="w-20 text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {apartments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
                   Няма добавени апартаменти
                 </TableCell>
               </TableRow>
@@ -243,40 +246,33 @@ const Apartments: React.FC = () => {
               apartments.map((apartment) => (
                 <TableRow key={apartment.id}>
                   <TableCell className="font-medium">{apartment.number}</TableCell>
-                  <TableCell>
-                    {apartment.floor !== null ? (
-                      apartment.floor === 0 ? 'Партер' : 
-                      apartment.floor < 0 ? `Сутерен ${Math.abs(apartment.floor)}` :
-                      `Етаж ${apartment.floor}`
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell>{apartment.owner_name}</TableCell>
-                  <TableCell className="text-center">{apartment.residents_count}</TableCell>
-                  <TableCell className="text-right font-medium">
+                  <TableCell className="max-w-[150px] truncate">{apartment.owner_name}</TableCell>
+                  <TableCell className="text-right font-medium hidden sm:table-cell">
                     {apartment.monthly_fee.toFixed(2)} лв.
-                  </TableCell>
-                  <TableCell className="text-muted-foreground max-w-xs truncate">
-                    {apartment.notes || '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditDialog(apartment)}
-                        title="Редактирай"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openDeleteDialog(apartment)}
-                        className="text-destructive hover:text-destructive"
-                        title="Изтрий"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <PermissionGate feature="apartments" action="edit">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(apartment)}
+                          title="Редактирай"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </PermissionGate>
+                      <PermissionGate feature="apartments" action="delete">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openDeleteDialog(apartment)}
+                          className="text-destructive hover:text-destructive"
+                          title="Изтрий"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </PermissionGate>
                     </div>
                   </TableCell>
                 </TableRow>

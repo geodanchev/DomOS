@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, UserLogin, Token
+from app.schemas.permissions import get_permissions_for_role
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_token
 
 router = APIRouter()
@@ -55,6 +56,32 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_cashier_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency that requires the current user to be a cashier or admin.
+    
+    Use this to protect endpoints that cashiers can access (e.g., creating payments, obligations).
+    """
+    if current_user.role not in [UserRole.ADMIN, UserRole.CASHIER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нямате права за тази операция",
+        )
+    return current_user
+
+
+def require_not_viewer(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency that blocks viewer role from access.
+    
+    Use this to protect any write operation from viewers.
+    """
+    if current_user.role == UserRole.VIEWER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нямате права за тази операция",
+        )
+    return current_user
+
+
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """Login and get access token."""
@@ -75,10 +102,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     
     access_token = create_access_token(data={"sub": user.id})
     
+    # Generate UI permissions based on user role
+    permissions = get_permissions_for_role(user.role)
+    
     return Token(
         access_token=access_token,
         token_type="bearer",
         user=UserResponse.model_validate(user),
+        permissions=permissions,
     )
 
 

@@ -1,16 +1,14 @@
-"""Initialize database with tables and sample data.
+"""Initialize database with tables and real building data.
 
-Актуализирано за Account-based система.
 Създава:
 - Таблици
-- Потребители (admin, cecka)
-- Апартаменти със сметки
-- Начални задължения
-- Примерни плащания и транзакции
+- Потребители (Gosh, Cvetelina, Ani)
+- Апартаменти със сметки (реални данни от сградата)
+
+НЕ създава задължения и плащания - базата започва празна.
 """
 
 import sys
-from datetime import date
 from decimal import Decimal
 
 sys.path.insert(0, '.')
@@ -18,16 +16,9 @@ sys.path.insert(0, '.')
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.models import (
-    Apartment, 
-    Payment, 
-    Obligation, 
-    ObligationType,
+    Apartment,
     ApartmentAccount,
-    AccountTransaction,
-    TransactionType,
-    TransactionReference,
     User,
-    Receipt,
 )
 from app.models.user import UserRole
 from app.core.security import get_password_hash
@@ -40,41 +31,55 @@ def init_db():
     print("Tables created successfully!")
 
 
-def create_users(db) -> tuple:
-    """Create demo users. Returns (admin, cashier)."""
+def create_users(db) -> dict:
+    """Create users. Returns dict of users."""
     # Check if users exist
     existing = db.query(User).first()
     if existing:
         print("Users already exist, fetching...")
-        admin = db.query(User).filter(User.username == "admin").first()
-        cashier = db.query(User).filter(User.username == "cecka").first()
-        return admin, cashier
+        return {
+            'admin': db.query(User).filter(User.username == "Gosh").first(),
+            'cashier': db.query(User).filter(User.username == "Cvetelina").first(),
+            'viewer': db.query(User).filter(User.username == "Ani").first(),
+        }
     
     print("Creating users...")
     
-    # Create admin
-    admin = User(
-        username="admin",
-        password_hash=get_password_hash("admin123"),
-        display_name="Администратор",
+    users = {}
+    
+    # Create admin - Gosh
+    users['admin'] = User(
+        username="Gosh",
+        password_hash=get_password_hash("Adidas2002802"),
+        display_name="Гош",
         role=UserRole.ADMIN,
     )
-    db.add(admin)
+    db.add(users['admin'])
     
-    # Create cashier (Цецка)
-    cashier = User(
-        username="cecka",
-        password_hash=get_password_hash("1234"),
-        display_name="Цецка",
+    # Create cashier - Cvetelina
+    users['cashier'] = User(
+        username="Cvetelina",
+        password_hash=get_password_hash("Sony5Mouse"),
+        display_name="Цветелина",
         role=UserRole.CASHIER,
     )
-    db.add(cashier)
+    db.add(users['cashier'])
+    
+    # Create viewer - Ani
+    users['viewer'] = User(
+        username="Ani",
+        password_hash=get_password_hash("Book4Me"),
+        display_name="Ани",
+        role=UserRole.VIEWER,
+    )
+    db.add(users['viewer'])
     
     db.commit()
-    print(f"  ✓ Created: admin (password: admin123)")
-    print(f"  ✓ Created: cecka (password: 1234)")
+    print(f"  ✓ Created: Gosh (admin)")
+    print(f"  ✓ Created: Cvetelina (cashier)")
+    print(f"  ✓ Created: Ani (viewer)")
     
-    return admin, cashier
+    return users
 
 
 def create_apartments_with_accounts(db) -> list:
@@ -87,17 +92,38 @@ def create_apartments_with_accounts(db) -> list:
     
     print("Creating apartments with accounts...")
     
+    # Real building data
+    # Format: number, floor, owner_name, residents_count, monthly_fee, notes
     apartments_data = [
-        {"number": "1", "floor": 1, "owner_name": "Иван Петров", "residents_count": 2, "monthly_fee": Decimal("15.00")},
-        {"number": "2", "floor": 1, "owner_name": "Мария Георгиева", "residents_count": 4, "monthly_fee": Decimal("30.00")},
-        {"number": "3", "floor": 1, "owner_name": "Петър Стоянов", "residents_count": 3, "monthly_fee": Decimal("22.50")},
-        {"number": "4", "floor": 2, "owner_name": "Елена Димитрова", "residents_count": 1, "monthly_fee": Decimal("10.00")},
-        {"number": "5", "floor": 2, "owner_name": "Георги Иванов", "residents_count": 5, "monthly_fee": Decimal("35.00")},
-        {"number": "6", "floor": 2, "owner_name": "Анна Николова", "residents_count": 2, "monthly_fee": Decimal("15.00")},
-        {"number": "7", "floor": 3, "owner_name": "Стефан Тодоров", "residents_count": 3, "monthly_fee": Decimal("22.50")},
-        {"number": "8", "floor": 3, "owner_name": "Катя Василева", "residents_count": 2, "monthly_fee": Decimal("15.00")},
-        {"number": "9", "floor": 3, "owner_name": "Димитър Колев", "residents_count": 4, "monthly_fee": Decimal("30.00")},
-        {"number": "10", "floor": 4, "owner_name": "Росица Атанасова", "residents_count": 2, "monthly_fee": Decimal("15.00")},
+        # Етаж 1
+        {"number": "1", "floor": 1, "owner_name": "Драгана", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        {"number": "2", "floor": 1, "owner_name": "Огнян", "residents_count": 2, "monthly_fee": Decimal("11.00"), "notes": None},
+        {"number": "3", "floor": 1, "owner_name": "Стоянка Гълабова", "residents_count": 0, "monthly_fee": Decimal("7.00"), "notes": None},
+        {"number": "4", "floor": 1, "owner_name": "Георги", "residents_count": 2, "monthly_fee": Decimal("11.00"), "notes": None},
+        
+        # Етаж 2
+        {"number": "9", "floor": 2, "owner_name": "Цветослава Василева Ботева", "residents_count": 0, "monthly_fee": Decimal("7.00"), "notes": None},
+        {"number": "10", "floor": 2, "owner_name": "Петия", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        {"number": "11", "floor": 2, "owner_name": "Венета", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        {"number": "12", "floor": 2, "owner_name": "Петър Спасов", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        
+        # Етаж 3
+        {"number": "17", "floor": 3, "owner_name": "Ивка", "residents_count": 1, "monthly_fee": Decimal("9.50"), "notes": "0.5 за куче"},
+        {"number": "18", "floor": 3, "owner_name": "Надка Чуканова", "residents_count": 2, "monthly_fee": Decimal("11.00"), "notes": None},
+        {"number": "19", "floor": 3, "owner_name": "Цецка Бенчева", "residents_count": 0, "monthly_fee": Decimal("7.00"), "notes": None},
+        {"number": "20", "floor": 3, "owner_name": "Ивайло Крумов", "residents_count": 3, "monthly_fee": Decimal("13.00"), "notes": None},
+        
+        # Етаж 4
+        {"number": "25", "floor": 4, "owner_name": "Радослав", "residents_count": 2, "monthly_fee": Decimal("11.00"), "notes": None},
+        {"number": "26", "floor": 4, "owner_name": "Георги Данчев", "residents_count": 2, "monthly_fee": Decimal("13.50"), "notes": "+ 2 деца + куче"},
+        {"number": "27", "floor": 4, "owner_name": "Диляна Чипилова", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        {"number": "28", "floor": 4, "owner_name": "Николай", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        
+        # Етаж 5
+        {"number": "33", "floor": 5, "owner_name": "Цветелина Григорова", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
+        {"number": "34", "floor": 5, "owner_name": "Тодорка", "residents_count": 1, "monthly_fee": Decimal("11.00"), "notes": "+ 2 деца"},
+        {"number": "35", "floor": 5, "owner_name": "Бисерка", "residents_count": 1, "monthly_fee": Decimal("9.50"), "notes": "+ куче"},
+        {"number": "36", "floor": 5, "owner_name": "Мирослава", "residents_count": 1, "monthly_fee": Decimal("9.00"), "notes": None},
     ]
     
     apartments = []
@@ -120,138 +146,6 @@ def create_apartments_with_accounts(db) -> list:
     return apartments
 
 
-def create_monthly_obligations(db, apartments: list) -> list:
-    """Create monthly obligations for current month."""
-    current_month = f"{date.today().year}-{date.today().month:02d}"
-    
-    # Check if obligations exist for this month
-    existing = db.query(Obligation).filter(
-        Obligation.month == current_month,
-        Obligation.type == ObligationType.MONTHLY
-    ).first()
-    
-    if existing:
-        print(f"Obligations for {current_month} already exist, skipping...")
-        return []
-    
-    print(f"Creating monthly obligations for {current_month}...")
-    
-    obligations = []
-    for apt in apartments:
-        db.refresh(apt)
-        
-        # Create obligation
-        obligation = Obligation(
-            type=ObligationType.MONTHLY,
-            apartment_id=apt.id,
-            month=current_month,
-            amount=apt.monthly_fee,
-            description=f"Месечна такса за {current_month}"
-        )
-        db.add(obligation)
-        db.flush()
-        
-        # Get the apartment account
-        account = db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == apt.id
-        ).first()
-        
-        if account:
-            # Debit the account (subtract from balance)
-            account.balance -= apt.monthly_fee
-            
-            # Record the transaction
-            transaction = AccountTransaction(
-                account_id=account.id,
-                type=TransactionType.DEBIT,
-                amount=apt.monthly_fee,
-                reference_type=TransactionReference.OBLIGATION,
-                reference_id=obligation.id,
-                balance_after=account.balance,
-                description=f"Месечна такса {current_month}"
-            )
-            db.add(transaction)
-        
-        obligations.append(obligation)
-    
-    db.commit()
-    print(f"  ✓ Created {len(obligations)} monthly obligations")
-    
-    return obligations
-
-
-def create_sample_payments(db, apartments: list, cashier) -> list:
-    """Create sample payments for some apartments."""
-    current_month = f"{date.today().year}-{date.today().month:02d}"
-    
-    # Check if payments exist
-    existing = db.query(Payment).filter(Payment.month == current_month).first()
-    if existing:
-        print("Payments already exist for this month, skipping...")
-        return []
-    
-    print("Creating sample payments...")
-    
-    # Payment scenarios:
-    # Apt 1 - fully paid
-    # Apt 3 - partially paid (10 of 22.50)
-    # Apt 5 - fully paid
-    # Apt 7 - overpaid (30 instead of 22.50)
-    
-    payment_scenarios = [
-        {"apt_index": 0, "amount": Decimal("15.00"), "note": "Платено изцяло"},
-        {"apt_index": 2, "amount": Decimal("10.00"), "note": "Частично плащане"},
-        {"apt_index": 4, "amount": Decimal("35.00"), "note": "Платено изцяло"},
-        {"apt_index": 6, "amount": Decimal("30.00"), "note": "Надплатено"},
-    ]
-    
-    payments = []
-    for scenario in payment_scenarios:
-        apt = apartments[scenario["apt_index"]]
-        db.refresh(apt)
-        
-        # Create payment
-        payment = Payment(
-            apartment_id=apt.id,
-            amount=float(scenario["amount"]),
-            month=current_month,
-            payment_date=date.today(),
-            payment_method="cash",
-            collected_by_id=cashier.id if cashier else None,
-            notes=scenario["note"]
-        )
-        db.add(payment)
-        db.flush()
-        
-        # Get the apartment account
-        account = db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == apt.id
-        ).first()
-        
-        if account:
-            # Credit the account (add to balance)
-            account.balance += scenario["amount"]
-            
-            # Record the transaction
-            transaction = AccountTransaction(
-                account_id=account.id,
-                type=TransactionType.CREDIT,
-                amount=scenario["amount"],
-                reference_type=TransactionReference.PAYMENT,
-                reference_id=payment.id,
-                balance_after=account.balance,
-                description=f"Плащане за {current_month}"
-            )
-            db.add(transaction)
-        
-        payments.append(payment)
-        print(f"  ✓ Apt {apt.number}: {scenario['amount']} лв - {scenario['note']}")
-    
-    db.commit()
-    
-    return payments
-
-
 def print_summary(db):
     """Print summary of database state."""
     print("\n" + "="*60)
@@ -263,35 +157,30 @@ def print_summary(db):
     print(f"\n📋 Users ({len(users)}):")
     for u in users:
         print(f"   - {u.username} ({u.display_name}) - {u.role.value}")
-    print("   Passwords: admin=admin123, cecka=1234")
+    print("\n   Passwords:")
+    print("   - Gosh: Adidas2002802 (admin)")
+    print("   - Cvetelina: Sony5Mouse (cashier)")
+    print("   - Ani: Book4Me (viewer)")
     
     # Apartments
-    apartments = db.query(Apartment).all()
+    apartments = db.query(Apartment).order_by(Apartment.number).all()
     print(f"\n🏠 Apartments ({len(apartments)}):")
+    print(f"   {'Ап.':<5} {'Етаж':<5} {'Собственик':<25} {'Живущи':>6} {'Такса':>8} {'Бележки'}")
+    print("   " + "-"*70)
     
-    # Account balances
-    print("\n💰 Account Balances:")
-    print(f"   {'Ап.':<5} {'Собственик':<20} {'Такса':>8} {'Баланс':>10} {'Статус':<15}")
-    print("   " + "-"*58)
-    
+    total_fee = Decimal("0.00")
     for apt in apartments:
-        db.refresh(apt)
-        account = apt.account
-        if account:
-            balance = account.balance
-            if balance > 0:
-                status = "✅ Надплатено"
-            elif balance == 0:
-                status = "✅ Изравнен"
-            else:
-                status = f"⚠️ Дължи {abs(balance):.2f}"
-            print(f"   {apt.number:<5} {apt.owner_name:<20} {apt.monthly_fee:>8.2f} {balance:>10.2f} {status}")
+        notes = apt.notes or ""
+        print(f"   {apt.number:<5} {apt.floor:<5} {apt.owner_name:<25} {apt.residents_count:>6} {apt.monthly_fee:>8.2f} {notes}")
+        total_fee += apt.monthly_fee
     
-    # Transactions count
-    tx_count = db.query(AccountTransaction).count()
-    print(f"\n📊 Total transactions: {tx_count}")
+    print("   " + "-"*70)
+    print(f"   {'ОБЩО:':<37} {'':<6} {total_fee:>8.2f} лв/месец")
     
     print("\n" + "="*60)
+    print("Базата данни е готова за работа!")
+    print("Задълженията и плащанията са празни - започвате на чисто.")
+    print("="*60)
 
 
 def main():
@@ -305,10 +194,8 @@ def main():
     # Create data
     db = SessionLocal()
     try:
-        admin, cashier = create_users(db)
-        apartments = create_apartments_with_accounts(db)
-        create_monthly_obligations(db, apartments)
-        create_sample_payments(db, apartments, cashier)
+        create_users(db)
+        create_apartments_with_accounts(db)
         
         print_summary(db)
         

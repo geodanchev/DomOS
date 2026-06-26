@@ -2,7 +2,9 @@
 
 from pydantic import BaseModel, Field
 from datetime import datetime
+
 from app.models.user import UserRole
+from app.schemas.permissions import UIPermissions
 
 
 class UserBase(BaseModel):
@@ -35,7 +37,12 @@ class UserLogin(BaseModel):
 
 
 class Token(BaseModel):
-    """Schema for JWT token response."""
+    """Schema for JWT token response.
+    
+    Includes UI permissions for frontend to conditionally render elements.
+    Note: Permissions are for UI convenience only - backend always validates.
+    """
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+    permissions: UIPermissions

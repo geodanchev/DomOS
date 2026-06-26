@@ -176,12 +176,15 @@ class TestGetExpense:
 
 
 class TestUpdateExpense:
-    """Tests for PATCH /api/expenses/{expense_id} endpoint."""
+    """Tests for PATCH /api/expenses/{expense_id} endpoint.
+    
+    SECURITY: Update requires admin role (RBAC protection).
+    """
     
     def test_update_expense_success(
-        self, client: TestClient, cashier_headers: dict, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, sample_expense: Expense
     ):
-        """Test updating expense."""
+        """Test updating expense (admin only)."""
         update_data = {
             "description": "Ремонт на покрив - актуализирано",
             "amount": 550.00,
@@ -190,7 +193,7 @@ class TestUpdateExpense:
         response = client.patch(
             f"/api/expenses/{sample_expense.id}",
             json=update_data,
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 200
@@ -199,9 +202,9 @@ class TestUpdateExpense:
         assert data["amount"] == 550.00
     
     def test_update_expense_partial(
-        self, client: TestClient, cashier_headers: dict, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, sample_expense: Expense
     ):
-        """Test partial update of expense."""
+        """Test partial update of expense (admin only)."""
         update_data = {
             "vendor": "Нов Строител ООД",
         }
@@ -209,7 +212,7 @@ class TestUpdateExpense:
         response = client.patch(
             f"/api/expenses/{sample_expense.id}",
             json=update_data,
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 200
@@ -218,9 +221,9 @@ class TestUpdateExpense:
         assert data["description"] == "Ремонт на покрив"  # unchanged
     
     def test_update_cancelled_expense_fails(
-        self, client: TestClient, cashier_headers: dict, test_db: Session, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, test_db: Session, sample_expense: Expense
     ):
-        """Test that cancelled expenses cannot be updated."""
+        """Test that cancelled expenses cannot be updated (admin only)."""
         sample_expense.status = ExpenseStatus.CANCELLED
         test_db.commit()
         
@@ -229,7 +232,7 @@ class TestUpdateExpense:
         response = client.patch(
             f"/api/expenses/{sample_expense.id}",
             json=update_data,
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 400
@@ -237,15 +240,18 @@ class TestUpdateExpense:
 
 
 class TestMarkExpensePaid:
-    """Tests for POST /api/expenses/{expense_id}/pay endpoint."""
+    """Tests for POST /api/expenses/{expense_id}/pay endpoint.
+    
+    SECURITY: Mark as paid requires admin role (RBAC protection).
+    """
     
     def test_mark_expense_paid_success(
-        self, client: TestClient, cashier_headers: dict, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, sample_expense: Expense
     ):
-        """Test marking expense as paid."""
+        """Test marking expense as paid (admin only)."""
         response = client.post(
             f"/api/expenses/{sample_expense.id}/pay",
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 200
@@ -255,27 +261,27 @@ class TestMarkExpensePaid:
         assert data["paid_date"] is not None
     
     def test_mark_already_paid_fails(
-        self, client: TestClient, cashier_headers: dict, paid_expense: Expense
+        self, client: TestClient, admin_headers: dict, paid_expense: Expense
     ):
-        """Test that already paid expenses cannot be marked as paid again."""
+        """Test that already paid expenses cannot be marked as paid again (admin only)."""
         response = client.post(
             f"/api/expenses/{paid_expense.id}/pay",
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 400
         assert "вече е платен" in response.json()["detail"]
     
     def test_mark_cancelled_as_paid_fails(
-        self, client: TestClient, cashier_headers: dict, test_db: Session, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, test_db: Session, sample_expense: Expense
     ):
-        """Test that cancelled expenses cannot be marked as paid."""
+        """Test that cancelled expenses cannot be marked as paid (admin only)."""
         sample_expense.status = ExpenseStatus.CANCELLED
         test_db.commit()
         
         response = client.post(
             f"/api/expenses/{sample_expense.id}/pay",
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 400
@@ -283,15 +289,18 @@ class TestMarkExpensePaid:
 
 
 class TestCancelExpense:
-    """Tests for POST /api/expenses/{expense_id}/cancel endpoint."""
+    """Tests for POST /api/expenses/{expense_id}/cancel endpoint.
+    
+    SECURITY: Cancel requires admin role (RBAC protection).
+    """
     
     def test_cancel_expense_success(
-        self, client: TestClient, cashier_headers: dict, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, sample_expense: Expense
     ):
-        """Test cancelling expense."""
+        """Test cancelling expense (admin only)."""
         response = client.post(
             f"/api/expenses/{sample_expense.id}/cancel",
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 200
@@ -300,15 +309,15 @@ class TestCancelExpense:
         assert data["status_display"] == "Анулиран"
     
     def test_cancel_already_cancelled_fails(
-        self, client: TestClient, cashier_headers: dict, test_db: Session, sample_expense: Expense
+        self, client: TestClient, admin_headers: dict, test_db: Session, sample_expense: Expense
     ):
-        """Test that already cancelled expenses cannot be cancelled again."""
+        """Test that already cancelled expenses cannot be cancelled again (admin only)."""
         sample_expense.status = ExpenseStatus.CANCELLED
         test_db.commit()
         
         response = client.post(
             f"/api/expenses/{sample_expense.id}/cancel",
-            headers=cashier_headers
+            headers=admin_headers
         )
         
         assert response.status_code == 400

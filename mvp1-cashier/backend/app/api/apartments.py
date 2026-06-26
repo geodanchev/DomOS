@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.apartment import Apartment
 from app.models.user import User
 from app.schemas.apartment import ApartmentCreate, ApartmentUpdate, ApartmentResponse, ApartmentList
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -51,9 +51,12 @@ async def get_apartment(
 async def create_apartment(
     data: ApartmentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
-    """Create a new apartment."""
+    """Create a new apartment.
+    
+    SECURITY: Само администратори могат да създават апартаменти.
+    """
     # Check if apartment number exists
     existing = db.query(Apartment).filter(Apartment.number == data.number).first()
     if existing:
@@ -75,9 +78,12 @@ async def update_apartment(
     apartment_id: int,
     data: ApartmentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
-    """Update an apartment."""
+    """Update an apartment.
+    
+    SECURITY: Само администратори могат да редактират апартаменти.
+    """
     apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
     if not apartment:
         raise HTTPException(
@@ -109,9 +115,12 @@ async def update_apartment(
 async def delete_apartment(
     apartment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
-    """Delete an apartment."""
+    """Delete an apartment.
+    
+    SECURITY: Само администратори могат да изтриват апартаменти.
+    """
     apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
     if not apartment:
         raise HTTPException(

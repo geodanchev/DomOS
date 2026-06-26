@@ -19,7 +19,7 @@ from app.schemas.obligation import (
 )
 from app.services.obligation_service import ObligationService
 from app.models.user import User
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin, require_cashier_or_admin
 
 router = APIRouter(prefix="/obligations", tags=["obligations"])
 
@@ -30,9 +30,12 @@ router = APIRouter(prefix="/obligations", tags=["obligations"])
 def create_obligation(
     data: ObligationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_cashier_or_admin),  # RBAC: Admin or Cashier
 ):
-    """Създава ново задължение и дебитира сметката на апартамента."""
+    """Създава ново задължение и дебитира сметката на апартамента.
+    
+    SECURITY: Администратори и касиери могат да създават задължения.
+    """
     service = ObligationService(db)
     return service.create(data)
 
@@ -77,9 +80,12 @@ def update_obligation(
     obligation_id: int,
     data: ObligationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
-    """Актуализира задължение."""
+    """Актуализира задължение.
+    
+    SECURITY: Само администратори могат да редактират задължения.
+    """
     service = ObligationService(db)
     obligation = service.update(obligation_id, data)
     if not obligation:
@@ -91,9 +97,12 @@ def update_obligation(
 def delete_obligation(
     obligation_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
-    """Изтрива задължение и кредитира обратно сметката."""
+    """Изтрива задължение и кредитира обратно сметката.
+    
+    SECURITY: Само администратори могат да изтриват задължения.
+    """
     service = ObligationService(db)
     if not service.delete(obligation_id):
         raise HTTPException(status_code=404, detail="Задължението не е намерено")
@@ -130,10 +139,11 @@ def get_apartment_balance(
 def generate_monthly_obligations(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Месец (YYYY-MM)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Генерира месечни задължения за всички апартаменти.
     
+    SECURITY: Само администратори могат да генерират месечни задължения.
     При генериране се дебитира сметката на всеки апартамент.
     """
     service = ObligationService(db)

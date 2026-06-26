@@ -3,6 +3,7 @@ import { dashboardApi } from '../services/api';
 import type { CashierDashboard, FundBalance, ApartmentStatus } from '../types';
 import PaymentModal from '../components/PaymentModal';
 import NewObligationDialog from '../components/NewObligationDialog';
+import { PermissionGate } from '../components/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -60,18 +61,6 @@ const Dashboard: React.FC = () => {
     return `${months[parseInt(m) - 1]} ${year}`;
   };
 
-  const getStatusBadge = (status: string, statusDisplay: string) => {
-    switch (status) {
-      case 'paid':
-        return <Badge variant="success">✓ {statusDisplay}</Badge>;
-      case 'credit':
-        return <Badge variant="default" className="bg-blue-500">💰 {statusDisplay}</Badge>;
-      case 'owes':
-      default:
-        return <Badge variant="destructive">✗ {statusDisplay}</Badge>;
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -91,14 +80,19 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  // Filter apartments with obligations (owes status)
+  const apartmentsWithObligations = dashboard?.apartments.filter(apt => apt.status === 'owes') || [];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">
-          📊 Табло - {dashboard && formatMonth(dashboard.current_month)}
-        </h2>
-        <div className="flex gap-2">
+      {/* Title */}
+      <h2 className="text-2xl font-bold">
+        📊 Табло - {dashboard && formatMonth(dashboard.current_month)}
+      </h2>
+
+      {/* Buttons */}
+      <div className="flex gap-2 flex-wrap">
+        <PermissionGate feature="obligations" action="create">
           <Button
             onClick={() => setIsObligationDialogOpen(true)}
             className="bg-amber-600 hover:bg-amber-700"
@@ -106,11 +100,11 @@ const Dashboard: React.FC = () => {
             <Plus className="mr-2 h-4 w-4" />
             Ново задължение
           </Button>
-          <Button variant="secondary" onClick={loadData}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Опресни
-          </Button>
-        </div>
+        </PermissionGate>
+        <Button variant="secondary" onClick={loadData}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Опресни
+        </Button>
       </div>
 
       {/* New Obligation Dialog */}
@@ -120,7 +114,7 @@ const Dashboard: React.FC = () => {
         onSuccess={loadData}
       />
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Responsive Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Fund Balance */}
         <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
@@ -128,7 +122,7 @@ const Dashboard: React.FC = () => {
             <CardTitle className="text-sm font-medium opacity-90">💰 Баланс на фонда</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{fund?.current_balance.toFixed(2)} лв</div>
+            <div className="text-2xl md:text-3xl font-bold">{fund?.current_balance.toFixed(2)} лв</div>
           </CardContent>
         </Card>
 
@@ -138,7 +132,7 @@ const Dashboard: React.FC = () => {
             <CardTitle className="text-sm font-medium opacity-90">📥 Общо събрани</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{dashboard?.total_collected.toFixed(2)} лв</div>
+            <div className="text-2xl md:text-3xl font-bold">{dashboard?.total_collected.toFixed(2)} лв</div>
           </CardContent>
         </Card>
 
@@ -148,7 +142,7 @@ const Dashboard: React.FC = () => {
             <CardTitle className="text-sm font-medium opacity-90">⏳ Общо дължимо</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{dashboard?.total_owed.toFixed(2)} лв</div>
+            <div className="text-2xl md:text-3xl font-bold">{dashboard?.total_owed.toFixed(2)} лв</div>
           </CardContent>
         </Card>
 
@@ -158,16 +152,16 @@ const Dashboard: React.FC = () => {
             <CardTitle className="text-sm font-medium opacity-90">📈 Събираемост</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{dashboard?.collection_rate}%</div>
+            <div className="text-2xl md:text-3xl font-bold">{dashboard?.collection_rate}%</div>
             <div className="text-sm opacity-90 mt-1">
-              {dashboard?.paid_count} изплатени / {dashboard?.total_apartments} общо
+              {dashboard?.paid_count} / {dashboard?.total_apartments}
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Quick Stats */}
-      <div className="flex gap-4 flex-wrap">
+      <div className="flex gap-2 flex-wrap">
         <Badge variant="success" className="px-4 py-2 text-sm">
           ✓ Изплатени: {dashboard?.paid_count}
         </Badge>
@@ -176,69 +170,53 @@ const Dashboard: React.FC = () => {
         </Badge>
       </div>
 
-      {/* Apartments Table */}
+      {/* Apartments with Obligations Table - Mobile Optimized */}
       <Card>
         <CardHeader>
-          <CardTitle>🏠 Апартаменти</CardTitle>
+          <CardTitle>🏠 Апартаменти със задължения ({apartmentsWithObligations.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ап.</TableHead>
-                <TableHead>Собственик</TableHead>
-                <TableHead className="text-right">Задължения</TableHead>
-                <TableHead className="text-right">Плащания</TableHead>
-                <TableHead className="text-right">Баланс</TableHead>
-                <TableHead className="text-center">Статус</TableHead>
-                <TableHead className="text-center">Действие</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dashboard?.apartments.map((apt) => (
-                <TableRow key={apt.apartment_id}>
-                  <TableCell className="font-medium">
-                    {apt.apartment_number}
-                  </TableCell>
-                  <TableCell>{apt.owner_name}</TableCell>
-                  <TableCell className="text-right">
-                    {apt.total_obligations.toFixed(2)} лв
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {apt.total_payments.toFixed(2)} лв
-                  </TableCell>
-                  <TableCell className={`text-right font-medium ${apt.balance < 0 ? 'text-red-600' : apt.balance > 0 ? 'text-blue-600' : 'text-green-600'}`}>
-                    {apt.balance.toFixed(2)} лв
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {getStatusBadge(apt.status, apt.status_display)}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {apt.status === 'owes' && (
-                      <Button
-                        size="sm"
-                        onClick={() => setSelectedApartment(apt)}
-                      >
-                        💵 Плащане
-                      </Button>
-                    )}
-                    {apt.status === 'paid' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedApartment(apt)}
-                      >
-                        💵 Авансово
-                      </Button>
-                    )}
-                    {apt.status === 'credit' && (
-                      <span className="text-sm text-muted-foreground">Авансово</span>
-                    )}
-                  </TableCell>
+          {apartmentsWithObligations.length === 0 ? (
+            <div className="p-6 text-center text-muted-foreground">
+              Няма апартаменти със задължения 🎉
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-16">Ап.</TableHead>
+                  <TableHead>Собственик</TableHead>
+                  <TableHead className="text-right">Задължения</TableHead>
+                  <TableHead className="text-center w-24">Действие</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {apartmentsWithObligations.map((apt) => (
+                  <TableRow key={apt.apartment_id}>
+                    <TableCell className="font-medium">
+                      {apt.apartment_number}
+                    </TableCell>
+                    <TableCell className="max-w-[120px] truncate">
+                      {apt.owner_name}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-red-600">
+                      {Math.abs(apt.balance).toFixed(2)} лв
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <PermissionGate feature="payments" action="create">
+                        <Button
+                          size="sm"
+                          onClick={() => setSelectedApartment(apt)}
+                        >
+                          💵
+                        </Button>
+                      </PermissionGate>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

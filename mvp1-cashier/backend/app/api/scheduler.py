@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from app.models.user import User
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin
 from app.scheduler import get_jobs_status, run_job_now, get_scheduler
 
 router = APIRouter()
@@ -60,17 +60,15 @@ def list_jobs(
 @router.post("/jobs/run", response_model=JobRunResponse)
 async def run_job(
     request: JobRunRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Ръчно стартира job по ID.
+    
+    SECURITY: Само администратори могат да стартират jobs.
     
     Налични job IDs:
     - generate_monthly_obligations: Генерира месечни задължения за текущия месец
     """
-    # Проверка за admin права (опционално - може да се добави)
-    # if current_user.role != 'admin':
-    #     raise HTTPException(status_code=403, detail="Само администратори могат да стартират jobs")
-    
     result = await run_job_now(request.job_id)
     
     return JobRunResponse(
@@ -83,12 +81,11 @@ async def run_job(
 
 @router.post("/jobs/generate-monthly")
 async def trigger_monthly_obligations(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ) -> dict[str, Any]:
     """Shortcut endpoint за генериране на месечни задължения.
     
-    Удобен endpoint за касиера да тригерира генериране на месечни задължения
-    без да знае job ID.
+    SECURITY: Само администратори могат да генерират месечни задължения.
     """
     result = await run_job_now("generate_monthly_obligations")
     

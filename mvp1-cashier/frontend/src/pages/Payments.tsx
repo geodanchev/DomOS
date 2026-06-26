@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { paymentsApi, apartmentsApi, receiptsApi } from '../services/api';
 import type { Payment, Apartment } from '../types';
 import NewPaymentDialog from '../components/NewPaymentDialog';
+import { PermissionGate } from '../components/PermissionGate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -60,11 +61,6 @@ const Payments: React.FC = () => {
     loadData();
   }, [filterApartment, filterMonth]);
 
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('bg-BG');
-  };
-
   const formatMonth = (month: string): string => {
     const [year, m] = month.split('-');
     const months = [
@@ -72,15 +68,6 @@ const Payments: React.FC = () => {
       'Юли', 'Авг', 'Сеп', 'Окт', 'Ное', 'Дек'
     ];
     return `${months[parseInt(m) - 1]} ${year}`;
-  };
-
-  const getPaymentMethodLabel = (method: string): string => {
-    switch (method) {
-      case 'cash': return '💵 В брой';
-      case 'bank': return '🏦 Банка';
-      case 'card': return '💳 Карта';
-      default: return method;
-    }
   };
 
   const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -108,22 +95,25 @@ const Payments: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">💰 История на плащанията</h2>
-        <div className="flex gap-2">
+      {/* Title */}
+      <h2 className="text-2xl font-bold">💰 История на плащанията</h2>
+
+      {/* Buttons */}
+      <div className="flex gap-2 flex-wrap">
+        <PermissionGate feature="payments" action="create">
           <Button
             onClick={() => setIsPaymentDialogOpen(true)}
             className="bg-green-600 hover:bg-green-700"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Ново плащане
+            <span className="hidden sm:inline">Ново плащане</span>
+            <span className="sm:hidden">Ново</span>
           </Button>
-          <Button variant="secondary" onClick={loadData}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Опресни
-          </Button>
-        </div>
+        </PermissionGate>
+        <Button variant="secondary" onClick={loadData}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          <span className="hidden sm:inline">Опресни</span>
+        </Button>
       </div>
 
       {/* New Payment Dialog */}
@@ -133,41 +123,53 @@ const Payments: React.FC = () => {
         onSuccess={loadData}
       />
 
-      {/* Filters */}
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-green-500/10 rounded-lg p-4">
+          <div className="text-sm text-muted-foreground">Общо плащания</div>
+          <div className="text-2xl font-bold text-green-600">{payments.length}</div>
+        </div>
+        <div className="bg-blue-500/10 rounded-lg p-4">
+          <div className="text-sm text-muted-foreground">Обща сума</div>
+          <div className="text-2xl font-bold text-blue-600">{totalAmount.toFixed(2)} лв</div>
+        </div>
+      </div>
+
+      {/* Filters - Collapsible on mobile */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[200px] space-y-2">
+          <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
+            <div className="flex-1 space-y-2">
               <Label>Апартамент:</Label>
               <Select
                 value={filterApartment}
                 onValueChange={setFilterApartment}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Всички апартаменти" />
+                  <SelectValue placeholder="Всички" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Всички апартаменти</SelectItem>
+                  <SelectItem value="all">Всички</SelectItem>
                   {apartments.map((apt) => (
                     <SelectItem key={apt.id} value={String(apt.id)}>
-                      Ап. {apt.number} - {apt.owner_name}
+                      Ап. {apt.number}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             
-            <div className="flex-1 min-w-[200px] space-y-2">
+            <div className="flex-1 space-y-2">
               <Label>Месец:</Label>
               <Select
                 value={filterMonth}
                 onValueChange={setFilterMonth}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Всички месеци" />
+                  <SelectValue placeholder="Всички" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Всички месеци</SelectItem>
+                  <SelectItem value="all">Всички</SelectItem>
                   {getMonthOptions().map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
@@ -183,25 +185,14 @@ const Payments: React.FC = () => {
                 setFilterApartment('');
                 setFilterMonth('');
               }}
+              className="w-full sm:w-auto"
             >
               <X className="mr-2 h-4 w-4" />
-              Изчисти филтри
+              Изчисти
             </Button>
           </div>
         </CardContent>
       </Card>
-
-      {/* Summary */}
-      <div className="bg-primary/10 border border-primary/20 rounded-lg px-6 py-4">
-        <div className="flex justify-between items-center">
-          <span className="text-primary">
-            Показани: <strong>{payments.length}</strong> плащания
-          </span>
-          <span className="text-primary">
-            Обща сума: <strong>{totalAmount.toFixed(2)} лв</strong>
-          </span>
-        </div>
-      </div>
 
       {/* Error */}
       {error && (
@@ -216,55 +207,39 @@ const Payments: React.FC = () => {
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
         </div>
       ) : (
-        /* Payments Table */
+        /* Payments Table - Mobile Optimized */
         <Card>
           <CardHeader>
-            <CardTitle>Плащания</CardTitle>
+            <CardTitle>Плащания ({payments.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Дата</TableHead>
-                  <TableHead>Ап.</TableHead>
+                  <TableHead className="w-16">Ап.</TableHead>
                   <TableHead>Собственик</TableHead>
-                  <TableHead>За месец</TableHead>
                   <TableHead className="text-right">Сума</TableHead>
-                  <TableHead>Начин</TableHead>
-                  <TableHead>Приел</TableHead>
-                  <TableHead className="text-center">Разписка</TableHead>
+                  <TableHead className="text-center w-20">Разписка</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
                       Няма намерени плащания
                     </TableCell>
                   </TableRow>
                 ) : (
                   payments.map((payment) => (
                     <TableRow key={payment.id}>
-                      <TableCell>
-                        {formatDate(payment.payment_date)}
-                      </TableCell>
                       <TableCell className="font-medium">
                         {payment.apartment_number}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[120px] truncate">
                         {payment.owner_name}
-                      </TableCell>
-                      <TableCell>
-                        {formatMonth(payment.month)}
                       </TableCell>
                       <TableCell className="text-right font-medium text-green-600">
                         {payment.amount.toFixed(2)} лв
-                      </TableCell>
-                      <TableCell>
-                        {getPaymentMethodLabel(payment.payment_method)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {payment.collected_by_name || '-'}
                       </TableCell>
                       <TableCell className="text-center">
                         {payment.receipt_id ? (
@@ -272,9 +247,9 @@ const Payments: React.FC = () => {
                             variant="outline"
                             size="sm"
                             onClick={() => handleDownloadReceipt(payment.receipt_id!)}
-                            className="h-8"
+                            className="h-8 px-2"
                           >
-                            📄 Свали
+                            📄
                           </Button>
                         ) : (
                           <span className="text-muted-foreground text-xs">-</span>

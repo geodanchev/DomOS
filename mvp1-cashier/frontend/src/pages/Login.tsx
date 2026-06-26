@@ -94,14 +94,6 @@ const Login: React.FC = () => {
             </Button>
           </form>
 
-          {/* Demo credentials */}
-          <div className="mt-8 p-4 bg-muted rounded-lg">
-            <p className="text-sm text-muted-foreground text-center mb-2">Демо достъп:</p>
-            <div className="text-sm space-y-1">
-              <p><strong>Касиер:</strong> cecka / 1234</p>
-              <p><strong>Админ:</strong> admin / admin123</p>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

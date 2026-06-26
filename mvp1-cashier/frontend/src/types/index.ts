@@ -9,10 +9,71 @@ export interface User {
   updated_at: string;
 }
 
+// =============================================================================
+// UI Permissions types (feature-based permissions for UI convenience)
+// Backend is always the source of truth - these are for UI rendering decisions
+// =============================================================================
+
+export interface ApartmentPermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+export interface PaymentPermissions {
+  view: boolean;
+  create: boolean;
+  void: boolean;
+}
+
+export interface ObligationPermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+  generate_monthly: boolean;
+}
+
+export interface ExpensePermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+export interface ReportPermissions {
+  view: boolean;
+  export: boolean;
+}
+
+export interface SchedulerPermissions {
+  manage: boolean;
+}
+
+export interface UserManagementPermissions {
+  manage: boolean;
+}
+
+export interface UIPermissions {
+  apartments: ApartmentPermissions;
+  payments: PaymentPermissions;
+  obligations: ObligationPermissions;
+  expenses: ExpensePermissions;
+  reports: ReportPermissions;
+  scheduler: SchedulerPermissions;
+  users: UserManagementPermissions;
+}
+
+// =============================================================================
+// Auth Response types
+// =============================================================================
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;
   user: User;
+  permissions: UIPermissions;
 }
 
 // Apartment types

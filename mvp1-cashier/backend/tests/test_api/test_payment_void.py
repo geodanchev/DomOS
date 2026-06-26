@@ -18,17 +18,21 @@ from app.models.user import User
 
 
 class TestVoidPayment:
-    """Tests for POST /api/payments/{payment_id}/void endpoint."""
+    """Tests for POST /api/payments/{payment_id}/void endpoint.
+    
+    RBAC: Only admin can void payments.
+    """
     
     def test_void_payment_success(
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should void a payment successfully."""
-        # First create a payment
+        """Should void a payment successfully (admin only)."""
+        # First create a payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -48,10 +52,10 @@ class TestVoidPayment:
         ).first()
         initial_balance = float(account.balance)
         
-        # Void the payment
+        # Void the payment (admin only)
         void_response = client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={
                 "reason": "Грешно въведена сума - трябва да е 60 лв вместо 50 лв"
             },
@@ -73,11 +77,12 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should update payment status to voided."""
-        # Create payment
+        """Should update payment status to voided (admin only)."""
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -89,10 +94,10 @@ class TestVoidPayment:
         )
         payment_id = create_response.json()["id"]
         
-        # Void payment
+        # Void payment (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Тест за анулиране на плащане"},
         )
         
@@ -109,17 +114,18 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should subtract payment amount from account balance."""
+        """Should subtract payment amount from account balance (admin only)."""
         # Get or create account and record initial balance
         from app.api.payments import get_or_create_account
         account = get_or_create_account(test_db, sample_apartment.id)
         test_db.commit()
         initial_balance = Decimal(str(account.balance))
         
-        # Create payment
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -136,10 +142,10 @@ class TestVoidPayment:
         balance_after_payment = Decimal(str(account.balance))
         assert balance_after_payment == initial_balance + Decimal("100.00")
         
-        # Void payment
+        # Void payment (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Тестово анулиране за баланс"},
         )
         
@@ -151,11 +157,12 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should create a DEBIT transaction with VOID reference."""
-        # Create payment
+        """Should create a DEBIT transaction with VOID reference (admin only)."""
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -167,10 +174,10 @@ class TestVoidPayment:
         )
         payment_id = create_response.json()["id"]
         
-        # Void payment
+        # Void payment (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Тест за транзакция"},
         )
         
@@ -189,11 +196,12 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should create an audit log entry for void operation."""
-        # Create payment
+        """Should create an audit log entry for void operation (admin only)."""
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -210,10 +218,10 @@ class TestVoidPayment:
             AuditLog.action == AuditAction.PAYMENT_VOIDED.value
         ).count()
         
-        # Void payment
+        # Void payment (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Audit log test"},
         )
         
@@ -239,12 +247,12 @@ class TestVoidPayment:
     def test_void_payment_not_found(
         self,
         client: TestClient,
-        cashier_headers: dict,
+        admin_headers: dict,
     ):
-        """Should return 404 for non-existent payment."""
+        """Should return 404 for non-existent payment (admin only)."""
         response = client.post(
             "/api/payments/99999/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Test reason for non-existent payment"},
         )
         
@@ -255,10 +263,11 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
     ):
-        """Should return 400 when trying to void already voided payment."""
-        # Create payment
+        """Should return 400 when trying to void already voided payment (admin only)."""
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -270,18 +279,18 @@ class TestVoidPayment:
         )
         payment_id = create_response.json()["id"]
         
-        # Void payment first time
+        # Void payment first time (admin only)
         first_void = client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "First void attempt"},
         )
         assert first_void.status_code == 200
         
-        # Try to void again
+        # Try to void again (admin only)
         second_void = client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Second void attempt"},
         )
         
@@ -292,10 +301,11 @@ class TestVoidPayment:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
     ):
-        """Should return 422 when reason is missing or too short."""
-        # Create payment
+        """Should return 422 when reason is missing or too short (admin only)."""
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -307,18 +317,18 @@ class TestVoidPayment:
         )
         payment_id = create_response.json()["id"]
         
-        # Try to void without reason
+        # Try to void without reason (admin only)
         response_no_reason = client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={},
         )
         assert response_no_reason.status_code == 422
         
-        # Try to void with too short reason
+        # Try to void with too short reason (admin only)
         response_short_reason = client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "кратко"},
         )
         assert response_short_reason.status_code == 422
@@ -337,16 +347,20 @@ class TestVoidPayment:
 
 
 class TestListPaymentsWithVoided:
-    """Tests for list payments with voided filter."""
+    """Tests for list payments with voided filter.
+    
+    RBAC: Only admin can void payments.
+    """
     
     def test_list_payments_excludes_voided_by_default(
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
     ):
         """Should exclude voided payments by default."""
-        # Create two payments
+        # Create two payments (cashier can do this)
         for i in range(2):
             client.post(
                 "/api/payments",
@@ -362,13 +376,13 @@ class TestListPaymentsWithVoided:
         response = client.get("/api/payments", headers=cashier_headers)
         initial_count = response.json()["total"]
         
-        # Void one payment
+        # Void one payment (admin only)
         payments = response.json()["items"]
         void_id = payments[0]["id"]
         
         client.post(
             f"/api/payments/{void_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Test void for filtering"},
         )
         
@@ -380,10 +394,11 @@ class TestListPaymentsWithVoided:
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
     ):
         """Should include voided payments when include_voided=true."""
-        # Create payment
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -395,10 +410,10 @@ class TestListPaymentsWithVoided:
         )
         payment_id = create_response.json()["id"]
         
-        # Void it
+        # Void it (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Test void for include flag"},
         )
         
@@ -414,16 +429,20 @@ class TestListPaymentsWithVoided:
 
 
 class TestReceiptForVoidedPayment:
-    """Tests for receipt generation with voided payments."""
+    """Tests for receipt generation with voided payments.
+    
+    RBAC: Only admin can void payments.
+    """
     
     def test_receipt_not_allowed_for_voided_payment(
         self,
         client: TestClient,
         cashier_headers: dict,
+        admin_headers: dict,
         sample_apartment: Apartment,
     ):
         """Should return 400 when trying to get receipt for voided payment."""
-        # Create payment
+        # Create payment (cashier can do this)
         create_response = client.post(
             "/api/payments",
             headers=cashier_headers,
@@ -435,10 +454,10 @@ class TestReceiptForVoidedPayment:
         )
         payment_id = create_response.json()["id"]
         
-        # Void it
+        # Void it (admin only)
         client.post(
             f"/api/payments/{payment_id}/void",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"reason": "Test void for receipt restriction"},
         )
         

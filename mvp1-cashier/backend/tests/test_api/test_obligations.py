@@ -618,13 +618,16 @@ class TestObligationAPIGet:
 
 
 class TestObligationAPIUpdate:
-    """Tests for PATCH /api/obligations/{id} endpoint."""
+    """Tests for PATCH /api/obligations/{id} endpoint.
     
-    def test_update_obligation_success(self, client: TestClient, cashier_headers: dict, sample_obligation: Obligation):
-        """Test updating obligation via API."""
+    RBAC: Only admin can update obligations.
+    """
+    
+    def test_update_obligation_success(self, client: TestClient, admin_headers: dict, sample_obligation: Obligation):
+        """Test updating obligation via API (admin only)."""
         response = client.patch(
             f"/api/obligations/{sample_obligation.id}",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"description": "Updated description"},
         )
         
@@ -632,31 +635,50 @@ class TestObligationAPIUpdate:
         data = response.json()
         assert data["description"] == "Updated description"
     
-    def test_update_obligation_not_found(self, client: TestClient, cashier_headers: dict):
+    def test_update_obligation_not_found(self, client: TestClient, admin_headers: dict):
         """Test updating non-existent obligation returns 404."""
         response = client.patch(
             "/api/obligations/99999",
-            headers=cashier_headers,
+            headers=admin_headers,
             json={"description": "Test"},
         )
         
         assert response.status_code == 404
+    
+    def test_update_obligation_forbidden_for_cashier(self, client: TestClient, cashier_headers: dict, sample_obligation: Obligation):
+        """Test that cashier cannot update obligations (RBAC)."""
+        response = client.patch(
+            f"/api/obligations/{sample_obligation.id}",
+            headers=cashier_headers,
+            json={"description": "Attempt update"},
+        )
+        
+        assert response.status_code == 403
 
 
 class TestObligationAPIDelete:
-    """Tests for DELETE /api/obligations/{id} endpoint."""
+    """Tests for DELETE /api/obligations/{id} endpoint.
     
-    def test_delete_obligation_success(self, client: TestClient, cashier_headers: dict, sample_obligation: Obligation):
-        """Test deleting obligation via API."""
-        response = client.delete(f"/api/obligations/{sample_obligation.id}", headers=cashier_headers)
+    RBAC: Only admin can delete obligations.
+    """
+    
+    def test_delete_obligation_success(self, client: TestClient, admin_headers: dict, sample_obligation: Obligation):
+        """Test deleting obligation via API (admin only)."""
+        response = client.delete(f"/api/obligations/{sample_obligation.id}", headers=admin_headers)
         
         assert response.status_code == 204
     
-    def test_delete_obligation_not_found(self, client: TestClient, cashier_headers: dict):
+    def test_delete_obligation_not_found(self, client: TestClient, admin_headers: dict):
         """Test deleting non-existent obligation returns 404."""
-        response = client.delete("/api/obligations/99999", headers=cashier_headers)
+        response = client.delete("/api/obligations/99999", headers=admin_headers)
         
         assert response.status_code == 404
+    
+    def test_delete_obligation_forbidden_for_cashier(self, client: TestClient, cashier_headers: dict, sample_obligation: Obligation):
+        """Test that cashier cannot delete obligations (RBAC)."""
+        response = client.delete(f"/api/obligations/{sample_obligation.id}", headers=cashier_headers)
+        
+        assert response.status_code == 403
 
 
 class TestObligationAPIApartment:
@@ -681,27 +703,39 @@ class TestObligationAPIApartment:
 
 
 class TestObligationAPIGenerateMonthly:
-    """Tests for POST /api/obligations/generate-monthly endpoint."""
+    """Tests for POST /api/obligations/generate-monthly endpoint.
     
-    def test_generate_monthly_success(self, client: TestClient, cashier_headers: dict, multiple_apartments: list[Apartment]):
-        """Test generating monthly obligations via API."""
+    RBAC: Only admin can generate monthly obligations.
+    """
+    
+    def test_generate_monthly_success(self, client: TestClient, admin_headers: dict, multiple_apartments: list[Apartment]):
+        """Test generating monthly obligations via API (admin only)."""
         response = client.post(
             "/api/obligations/generate-monthly?month=2026-04",
-            headers=cashier_headers,
+            headers=admin_headers,
         )
         
         assert response.status_code == 200
         data = response.json()
         assert len(data) == len(multiple_apartments)
     
-    def test_generate_monthly_invalid_month_format(self, client: TestClient, cashier_headers: dict):
+    def test_generate_monthly_invalid_month_format(self, client: TestClient, admin_headers: dict):
         """Test generating monthly with invalid month format."""
         response = client.post(
             "/api/obligations/generate-monthly?month=invalid",
-            headers=cashier_headers,
+            headers=admin_headers,
         )
         
         assert response.status_code == 422  # Validation error
+    
+    def test_generate_monthly_forbidden_for_cashier(self, client: TestClient, cashier_headers: dict):
+        """Test that cashier cannot generate monthly obligations (RBAC)."""
+        response = client.post(
+            "/api/obligations/generate-monthly?month=2026-05",
+            headers=cashier_headers,
+        )
+        
+        assert response.status_code == 403
 
 
 class TestObligationAPIStatistics:

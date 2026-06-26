@@ -26,7 +26,7 @@ from app.schemas.expense import (
     ExpenseList,
     ExpenseSummary,
 )
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin, require_cashier_or_admin
 
 router = APIRouter()
 
@@ -56,11 +56,12 @@ def build_expense_response(expense: Expense) -> ExpenseResponse:
 async def create_expense(
     expense_data: ExpenseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_cashier_or_admin),  # RBAC: Admin or Cashier
 ):
     """Create a new expense.
     
     Създава нов разход във фонда.
+    SECURITY: Само администратори и касиери могат да създават разходи.
     """
     expense = Expense(
         description=expense_data.description,
@@ -178,11 +179,12 @@ async def update_expense(
     expense_id: int,
     expense_data: ExpenseUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Update expense.
     
     Редакция на разход.
+    SECURITY: Само администратори могат да редактират разходи.
     """
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
     if not expense:
@@ -210,11 +212,12 @@ async def mark_expense_paid(
     expense_id: int,
     paid_date: Optional[datetime] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Mark expense as paid.
     
     Маркиране на разход като платен.
+    SECURITY: Само администратори могат да маркират разходи като платени.
     """
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
     if not expense:
@@ -239,11 +242,12 @@ async def mark_expense_paid(
 async def cancel_expense(
     expense_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Cancel expense.
     
     Анулиране на разход.
+    SECURITY: Само администратори могат да анулират разходи.
     """
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
     if not expense:

@@ -30,7 +30,7 @@ from app.schemas.payment import (
     PaymentVoidRequest,
     PaymentVoidResponse,
 )
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin, require_cashier_or_admin
 
 router = APIRouter()
 
@@ -232,10 +232,11 @@ async def get_apartment_payment_summary(
 async def create_payment(
     data: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_cashier_or_admin),  # RBAC: Admin or Cashier
 ):
     """Record a new payment.
     
+    SECURITY: Администратори и касиери могат да регистрират плащания.
     This is the main action for the cashier - recording payments from residents.
     The payment adds credit to the apartment's account.
     """
@@ -364,10 +365,11 @@ async def void_payment(
     data: PaymentVoidRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),  # RBAC: Admin only
 ):
     """Void (soft delete) a payment.
     
+    SECURITY: Само администратори могат да анулират плащания.
     ВАЖНО: Плащанията НИКОГА не се изтриват физически!
     Тази операция:
     - Маркира плащането като voided
