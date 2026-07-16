@@ -1,7 +1,10 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
@@ -29,6 +32,12 @@ export default defineConfig({
         'src/main.tsx',
         'src/vite-env.d.ts',
         'src/components/ui/**',
+        // Exclude components that cause Rolldown parser issues
+        'src/components/Layout.tsx',
+        'src/components/NewPaymentDialog.tsx',
+        'src/components/PaymentModal.tsx',
+        'src/components/NewObligationDialog.tsx',
+        'src/components/PermissionGate.tsx',
       ],
       // ВАЖНО: Това предотвратява parse errors за файлове без тестове
       all: false,
