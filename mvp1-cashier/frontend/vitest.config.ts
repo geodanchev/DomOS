@@ -14,8 +14,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: '@', replacement: path.join(rootDir, 'src') },
-      { find: '@/', replacement: path.join(rootDir, 'src/') },
+      { find: /^@\/(.*)/, replacement: path.join(rootDir, 'src/$1') },
     ],
   },
   test: {
@@ -24,13 +23,11 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', 'src/components/ui/**'],
-    alias: [
-      { find: '@', replacement: path.join(rootDir, 'src') },
-      { find: '@/', replacement: path.join(rootDir, 'src/') },
-    ],
-    deps: {
-      // Inline dependencies to ensure proper alias resolution
-      inline: [/@\//],
+    // Use server.deps for module resolution in vitest 4.x
+    server: {
+      deps: {
+        inline: [/^(?!.*node_modules).*$/],
+      },
     },
     coverage: {
       provider: 'v8',
