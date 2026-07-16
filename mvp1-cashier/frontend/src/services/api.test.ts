@@ -209,6 +209,7 @@ describe('API Services', () => {
           number: '10',
           floor: 3,
           owner_name: 'Нов Собственик',
+          residents_count: 2,
           monthly_fee: 15.0,
         };
         const mockResponse = {

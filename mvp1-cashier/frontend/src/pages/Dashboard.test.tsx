@@ -65,28 +65,37 @@ const mockDashboard: CashierDashboard = {
       apartment_number: '1',
       owner_name: 'Иван Иванов',
       balance: -100.00,
+      total_obligations: 500.00,
+      total_payments: 400.00,
       status: 'owes',
+      status_display: 'Дължи 100 лв',
     },
     {
       apartment_id: 2,
       apartment_number: '2',
       owner_name: 'Петър Петров',
       balance: 0,
+      total_obligations: 500.00,
+      total_payments: 500.00,
       status: 'paid',
+      status_display: 'Изплатен',
     },
     {
       apartment_id: 3,
       apartment_number: '3',
       owner_name: 'Мария Георгиева',
       balance: -200.00,
+      total_obligations: 500.00,
+      total_payments: 300.00,
       status: 'owes',
+      status_display: 'Дължи 200 лв',
     },
   ],
 };
 
 const mockFundBalance: FundBalance = {
   current_balance: 5000.00,
-  total_income: 10000.00,
+  total_collected_all_time: 10000.00,
   total_expenses: 5000.00,
 };
 
