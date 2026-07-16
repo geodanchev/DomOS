@@ -3,20 +3,20 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Use process.cwd() which is more reliable in CI environments
+const rootDir = process.cwd()
 
 export default defineConfig({
   plugins: [
     react(),
-    tsconfigPaths(),
+    tsconfigPaths({ root: rootDir }),
   ],
   resolve: {
-    // Fallback manual alias in case plugin doesn't work
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: path.join(rootDir, 'src') },
+      { find: '@/', replacement: path.join(rootDir, 'src/') },
+    ],
   },
   test: {
     globals: true,
@@ -24,9 +24,13 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', 'src/components/ui/**'],
-    // Vitest-specific alias for module resolution
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+    alias: [
+      { find: '@', replacement: path.join(rootDir, 'src') },
+      { find: '@/', replacement: path.join(rootDir, 'src/') },
+    ],
+    deps: {
+      // Inline dependencies to ensure proper alias resolution
+      inline: [/@\//],
     },
     coverage: {
       provider: 'v8',
@@ -41,7 +45,6 @@ export default defineConfig({
         'src/main.tsx',
         'src/vite-env.d.ts',
         'src/components/ui/**',
-        // Exclude components that cause Rolldown parser issues
         'src/components/Layout.tsx',
         'src/components/NewPaymentDialog.tsx',
         'src/components/PaymentModal.tsx',
