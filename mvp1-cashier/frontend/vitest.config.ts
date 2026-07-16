@@ -4,18 +4,15 @@ import react from '@vitejs/plugin-react'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import path from 'path'
 
-// Use process.cwd() which is more reliable in CI environments
-const rootDir = process.cwd()
-
 export default defineConfig({
   plugins: [
     react(),
-    tsconfigPaths({ root: rootDir }),
+    tsconfigPaths(),
   ],
   resolve: {
-    alias: [
-      { find: /^@\/(.*)/, replacement: path.join(rootDir, 'src/$1') },
-    ],
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
   },
   test: {
     globals: true,
@@ -23,12 +20,6 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', 'src/components/ui/**'],
-    // Use server.deps for module resolution in vitest 4.x
-    server: {
-      deps: {
-        inline: [/^(?!.*node_modules).*$/],
-      },
-    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

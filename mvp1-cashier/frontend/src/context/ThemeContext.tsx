@@ -14,7 +14,9 @@ const STORAGE_KEY = 'domos-theme';
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (typeof window.matchMedia !== 'function') return 'light';
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  return mediaQuery?.matches ? 'dark' : 'light';
 }
 
 function getStoredTheme(): Theme {
