@@ -9,7 +9,9 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage",
+    "lint": "echo 'ESLint not configured yet' && exit 0"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.17",
