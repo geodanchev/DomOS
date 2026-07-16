@@ -63,6 +63,11 @@ frontend/dist/
 *.sqlite3
 *.backup
 *.sql.gz
+*.sql
+db_dump*.sql
+
+# ----- Docker Environment Files -----
+.env.docker
 
 # ----- IDE/Editor -----
 .vscode/
