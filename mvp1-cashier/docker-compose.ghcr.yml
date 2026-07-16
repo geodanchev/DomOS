@@ -1,0 +1,216 @@
+# DomOS Cashier MVP - Production Docker Compose with Pre-built GHCR Images
+# Usage: docker compose -f docker-compose.ghcr.yml --env-file .env.production up -d
+#
+# This file uses pre-built images from GitHub Container Registry (ghcr.io)
+# instead of building locally.
+#
+# Prerequisites:
+# 1. Set your domain in .env: DOMAIN=yourdomain.com
+# 2. Set your email in .env: ACME_EMAIL=admin@yourdomain.com
+# 3. Set IMAGE_TAG for specific version (default: latest)
+# 4. Configure rate limits (optional): RATE_LIMIT_API_AVG, RATE_LIMIT_AUTH_AVG, etc.
+# 5. Point your domain DNS to this server's IP
+# 6. Open ports 80 and 443 on your firewall
+#
+# Pull latest images: docker compose -f docker-compose.ghcr.yml pull
+
+services:
+  # Traefik Reverse Proxy with automatic HTTPS
+  traefik:
+    image: traefik:v3.0
+    container_name: domos-traefik
+    restart: unless-stopped
+    command:
+      # API and Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      # Providers
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=domos-network-prod"
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # HTTP to HTTPS redirect
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Let's Encrypt
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # Logging
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+      - "--log.format=json"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.bufferingsize=100"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+      - traefik_logs:/var/log/traefik
+    networks:
+      - domos-network-prod
+    labels:
+      # Dashboard (optional - access at https://traefik.yourdomain.com)
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:$$apr1$$ruca84Hq$$mbjdMZBAG.KWn7vfN/SNK/}"
+
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: domos-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-domos_cashier}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-domos_cashier}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - domos-network-prod
+
+  # FastAPI Backend (Pre-built GHCR Image)
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-geodanchev}/domos-backend:${IMAGE_TAG:-latest}
+    container_name: domos-backend-prod
+    restart: unless-stopped
+    environment:
+      APP_NAME: "DomOS Cashier"
+      APP_VERSION: "1.0.0"
+      DEBUG: "false"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-domos_cashier}
+      SECRET_KEY: ${SECRET_KEY:?Secret key required}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      ALGORITHM: HS256
+      CORS_ORIGINS: '["https://${DOMAIN:-localhost}","https://www.${DOMAIN:-localhost}"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - domos-network-prod
+    labels:
+      - "traefik.enable=true"
+      
+      # Rate Limiting Middlewares
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.average=${RATE_LIMIT_API_AVG:-100}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.burst=${RATE_LIMIT_API_BURST:-50}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.period=${RATE_LIMIT_API_PERIOD:-1m}"
+      - "traefik.http.middlewares.api-ratelimit.ratelimit.sourceCriterion.ipStrategy.depth=${RATE_LIMIT_IP_DEPTH:-1}"
+      
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.average=${RATE_LIMIT_AUTH_AVG:-5}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.burst=${RATE_LIMIT_AUTH_BURST:-10}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.period=${RATE_LIMIT_AUTH_PERIOD:-1m}"
+      - "traefik.http.middlewares.auth-ratelimit.ratelimit.sourceCriterion.ipStrategy.depth=${RATE_LIMIT_IP_DEPTH:-1}"
+      
+      # Backend security headers
+      - "traefik.http.middlewares.backend-security.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.backend-security.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.backend-security.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.backend-security.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.backend-security.headers.frameDeny=true"
+      
+      # Auth routes (stricter rate limit)
+      - "traefik.http.routers.backend-auth.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.backend-auth.entrypoints=websecure"
+      - "traefik.http.routers.backend-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-auth.middlewares=auth-ratelimit,backend-security"
+      - "traefik.http.routers.backend-auth.priority=10"
+      
+      # General API routes
+      - "traefik.http.routers.backend.rule=Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend.middlewares=api-ratelimit,backend-security"
+      - "traefik.http.routers.backend.priority=5"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      
+      # Health endpoint
+      - "traefik.http.routers.backend-health.rule=Host(`${DOMAIN:-localhost}`) && Path(`/health`)"
+      - "traefik.http.routers.backend-health.entrypoints=websecure"
+      - "traefik.http.routers.backend-health.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-health.priority=15"
+      
+      # API Docs
+      - "traefik.http.routers.backend-docs.rule=Host(`${DOMAIN:-localhost}`) && (PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`))"
+      - "traefik.http.routers.backend-docs.entrypoints=websecure"
+      - "traefik.http.routers.backend-docs.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-docs.middlewares=api-ratelimit,backend-security"
+      - "traefik.http.routers.backend-docs.priority=8"
+
+  # React Frontend (Pre-built GHCR Image)
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-geodanchev}/domos-frontend:${IMAGE_TAG:-latest}
+    container_name: domos-frontend-prod
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - domos-network-prod
+    labels:
+      - "traefik.enable=true"
+      
+      # Frontend security headers
+      - "traefik.http.middlewares.frontend-security.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.frontend-security.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.frontend-security.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.frontend-security.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.frontend-security.headers.frameDeny=true"
+      - "traefik.http.middlewares.frontend-security.headers.contentSecurityPolicy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${DOMAIN:-localhost}"
+      
+      # Main frontend routes
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend.middlewares=frontend-security"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      
+      # WWW redirect
+      - "traefik.http.routers.frontend-www.rule=Host(`www.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.frontend-www.entrypoints=websecure"
+      - "traefik.http.routers.frontend-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend-www.middlewares=www-redirect"
+      - "traefik.http.middlewares.www-redirect.redirectregex.regex=^https://www\\.(.*)"
+      - "traefik.http.middlewares.www-redirect.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.www-redirect.redirectregex.permanent=true"
+
+volumes:
+  postgres_data_prod:
+    name: domos-postgres-data-prod
+  traefik_letsencrypt:
+    name: domos-traefik-letsencrypt
+  traefik_logs:
+    name: domos-traefik-logs
+
+networks:
+  domos-network-prod:
+    name: domos-network-prod
+    driver: bridge
