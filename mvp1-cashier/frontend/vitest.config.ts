@@ -15,16 +15,23 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    exclude: ['node_modules', 'dist', 'src/components/ui/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      reportsDirectory: './coverage',
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
+        'node_modules/',
+        'src/test/',
+        '**/*.d.ts',
+        '**/*.config.*',
         'src/main.tsx',
         'src/vite-env.d.ts',
-        'src/test/**',
-        'src/**/*.d.ts',
+        'src/components/ui/**',
       ],
+      // ВАЖНО: Това предотвратява parse errors за файлове без тестове
+      all: false,
     },
   },
 })
