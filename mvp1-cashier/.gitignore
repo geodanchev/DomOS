@@ -29,8 +29,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python build artifacts - anchored to root only
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -63,6 +64,11 @@ frontend/dist/
 *.sqlite3
 *.backup
 *.sql.gz
+*.sql
+db_dump*.sql
+
+# ----- Docker Environment Files -----
+.env.docker
 
 # ----- IDE/Editor -----
 .vscode/

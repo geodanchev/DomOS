@@ -1,0 +1,141 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./mvp1-cashier/backend
+    
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+      
+      - name: Настройка на Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Инсталиране на dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+      
+      - name: Изпълнение на backend тестове
+        run: |
+          pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=xml
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./mvp1-cashier/backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+        continue-on-error: true
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./mvp1-cashier/frontend
+    
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+      
+      - name: Настройка на Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './mvp1-cashier/frontend/package-lock.json'
+      
+      - name: Инсталиране на dependencies
+        run: npm ci
+      
+      - name: Изпълнение на frontend тестове
+        run: npm run test:ci
+      
+      - name: Build проверка
+        run: npm run build
+
+  lint-backend:
+    name: Backend Linting
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./mvp1-cashier/backend
+    
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+      
+      - name: Настройка на Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Инсталиране на linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort
+      
+      - name: Flake8 проверка
+        run: flake8 app/ tests/ --max-line-length=120 --exclude=venv,__pycache__
+        continue-on-error: true
+      
+      - name: Black форматиране проверка
+        run: black --check app/ tests/ --line-length=120
+        continue-on-error: true
+      
+      - name: isort проверка
+        run: isort --check-only app/ tests/
+        continue-on-error: true
+
+  lint-frontend:
+    name: Frontend Linting
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./mvp1-cashier/frontend
+    
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+      
+      - name: Настройка на Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './mvp1-cashier/frontend/package-lock.json'
+      
+      - name: Инсталиране на dependencies
+        run: npm ci
+      
+      - name: ESLint проверка
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: TypeScript проверка
+        run: npx tsc --noEmit
+        continue-on-error: true
