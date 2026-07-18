@@ -1,45 +1,61 @@
-# DomOS Backend - Docker Ignore
+# Git
+.git
+.gitignore
 
-# Virtual environment
-venv/
-.venv/
-env/
-
-# Python cache
-__pycache__/
+# Python
+__pycache__
 *.py[cod]
 *$py.class
-*.pyo
-*.pyd
+*.so
 .Python
+venv/
+ENV/
+.venv
+*.egg-info/
+.eggs/
 
-# Test files
-tests/
+# Testing
 .pytest_cache/
 .coverage
 htmlcov/
-*.cover
+.tox/
+tests/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# Environment files (will be set via docker-compose)
+# Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# Git
-.git/
-.gitignore
+# Database
+*.db
+*.sqlite3
+*.backup
 
-# Documentation
+# Alembic (keep for migrations, but exclude unnecessary files)
+alembic/__pycache__/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Docs
 *.md
+README*
+DOCS/
 docs/
 
+# Scripts (not needed in production)
+*.sh
+!entrypoint*.sh
+
 # Misc
-*.log
-*.tmp
 .DS_Store
+Thumbs.db
+*.log
