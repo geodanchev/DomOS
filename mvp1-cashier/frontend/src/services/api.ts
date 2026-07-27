@@ -23,8 +23,11 @@ import type {
 } from '../types';
 
 // Create axios instance
+// Use environment variable for API URL, defaulting to Cloud Run backend for production
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://domos-cashier-backend-985395022174.europe-west3.run.app/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

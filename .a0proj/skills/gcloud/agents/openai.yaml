@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cloud Run Operator"
+  short_description: "Safely stage, deploy, verify, roll out, and diagnose Cloud Run services with gcloud."
+  default_prompt: "Inspect this Cloud Run target or repository and perform the requested operation using staged no-traffic revisions and the approval policy."
