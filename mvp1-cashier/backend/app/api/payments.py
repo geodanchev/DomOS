@@ -1,7 +1,8 @@
 """Payments API endpoints - плащания.
 
-Актуализирано за account-based система + void (soft delete) support.
-При плащане се добавя кредит към сметката на апартамента.
+АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+Плащанията се записват директно. Балансът се изчислява динамично.
+AccountTransaction се използва само за одит цели.
 Плащанията НИКОГА не се изтриват - само се маркират като voided.
 """
 
@@ -35,85 +36,70 @@ from app.api.auth import get_current_user, require_admin, require_cashier_or_adm
 router = APIRouter()
 
 
+def calculate_balance(db: Session, apartment_id: int) -> Decimal:
+    """Calculate balance dynamically from payments and obligations.
+    
+    balance = sum(active payments) - sum(obligations)
+    
+    Returns:
+        Decimal: Current balance (negative = owes)
+    """
+    # Sum active payments only (exclude voided)
+    total_payments = db.query(func.sum(Payment.amount)).filter(
+        Payment.apartment_id == apartment_id,
+        Payment.status == PaymentStatus.ACTIVE
+    ).scalar() or Decimal("0")
+    
+    total_obligations = db.query(func.sum(Obligation.amount)).filter(
+        Obligation.apartment_id == apartment_id
+    ).scalar() or Decimal("0")
+    
+    return Decimal(str(total_payments)) - Decimal(str(total_obligations))
+
+
 def get_or_create_account(db: Session, apartment_id: int) -> ApartmentAccount:
-    """Get or create account for apartment."""
+    """Get or create account for apartment.
+    
+    Account is now just a container for transactions (audit log).
+    Balance is calculated dynamically, not stored.
+    """
     account = db.query(ApartmentAccount).filter(
         ApartmentAccount.apartment_id == apartment_id
     ).first()
     
     if not account:
-        # Calculate initial balance from existing data
-        total_payments = db.query(func.sum(Payment.amount)).filter(
-            Payment.apartment_id == apartment_id
-        ).scalar() or Decimal("0")
-        
-        total_obligations = db.query(func.sum(Obligation.amount)).filter(
-            Obligation.apartment_id == apartment_id
-        ).scalar() or Decimal("0")
-        
-        balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
-        
-        account = ApartmentAccount(
-            apartment_id=apartment_id,
-            balance=balance
-        )
+        # Simply create account without balance calculation
+        account = ApartmentAccount(apartment_id=apartment_id)
         db.add(account)
         db.flush()
     
     return account
 
 
-def add_credit_to_account(
+def record_transaction(
     db: Session, 
     account: ApartmentAccount, 
+    transaction_type: TransactionType,
     amount: Decimal,
-    payment_id: int,
+    reference_type: TransactionReference,
+    reference_id: int,
     description: str | None = None
 ) -> AccountTransaction:
-    """Add credit to account and create transaction record."""
-    # Update balance
-    new_balance = Decimal(str(account.balance)) + amount
-    account.balance = new_balance
+    """Record a transaction for audit purposes.
     
-    # Create transaction record
+    Note: balance_after is no longer calculated/stored.
+    Transactions are purely for audit trail.
+    """
     transaction = AccountTransaction(
         account_id=account.id,
-        type=TransactionType.CREDIT,
+        type=transaction_type,
         amount=amount,
-        reference_type=TransactionReference.PAYMENT,
-        reference_id=payment_id,
-        balance_after=new_balance,
-        description=description or f"Плащане #{payment_id}"
+        reference_type=reference_type,
+        reference_id=reference_id,
+        balance_after=None,  # No longer storing cached balance
+        description=description
     )
     db.add(transaction)
-    
-    return transaction
-
-
-def remove_credit_from_account(
-    db: Session, 
-    account: ApartmentAccount, 
-    amount: Decimal,
-    payment_id: int,
-    description: str | None = None
-) -> AccountTransaction:
-    """Remove credit from account (for voided payments) and create transaction record."""
-    # Update balance (subtract the amount)
-    new_balance = Decimal(str(account.balance)) - amount
-    account.balance = new_balance
-    
-    # Create transaction record
-    transaction = AccountTransaction(
-        account_id=account.id,
-        type=TransactionType.DEBIT,
-        amount=amount,
-        reference_type=TransactionReference.VOID,
-        reference_id=payment_id,
-        balance_after=new_balance,
-        description=description or f"Анулиране на плащане #{payment_id}"
-    )
-    db.add(transaction)
-    
     return transaction
 
 
@@ -176,7 +162,7 @@ async def get_apartment_payment_summary(
     Returns:
         - Apartment info
         - Last 3 payments
-        - Current balance from account
+        - Current balance (calculated dynamically)
     """
     # Verify apartment exists
     apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
@@ -186,14 +172,16 @@ async def get_apartment_payment_summary(
             detail="Апартаментът не е намерен",
         )
     
-    # Get or create account
-    account = get_or_create_account(db, apartment_id)
-    db.commit()
+    # Calculate balance dynamically
+    balance = calculate_balance(db, apartment_id)
     
-    # Get last 3 payments
+    # Get last 3 active payments
     recent_payments = (
         db.query(Payment)
-        .filter(Payment.apartment_id == apartment_id)
+        .filter(
+            Payment.apartment_id == apartment_id,
+            Payment.status == PaymentStatus.ACTIVE
+        )
         .order_by(desc(Payment.payment_date), desc(Payment.id))
         .limit(3)
         .all()
@@ -201,7 +189,8 @@ async def get_apartment_payment_summary(
     
     # Calculate totals
     total_payments = db.query(func.sum(Payment.amount)).filter(
-        Payment.apartment_id == apartment_id
+        Payment.apartment_id == apartment_id,
+        Payment.status == PaymentStatus.ACTIVE
     ).scalar() or Decimal("0")
     
     total_obligations = db.query(func.sum(Obligation.amount)).filter(
@@ -222,7 +211,7 @@ async def get_apartment_payment_summary(
             )
             for p in recent_payments
         ],
-        balance=float(account.balance),
+        balance=float(balance),
         total_obligations=float(total_obligations),
         total_payments=float(total_payments),
     )
@@ -238,7 +227,7 @@ async def create_payment(
     
     SECURITY: Администратори и касиери могат да регистрират плащания.
     This is the main action for the cashier - recording payments from residents.
-    The payment adds credit to the apartment's account.
+    Balance is calculated dynamically - no cache update needed.
     """
     # Verify apartment exists
     apartment = db.query(Apartment).filter(Apartment.id == data.apartment_id).first()
@@ -262,14 +251,16 @@ async def create_payment(
     db.add(payment)
     db.flush()  # Get payment ID
     
-    # Get or create account and add credit
+    # Record transaction for audit purposes (optional)
     account = get_or_create_account(db, data.apartment_id)
-    add_credit_to_account(
+    record_transaction(
         db=db,
         account=account,
+        transaction_type=TransactionType.CREDIT,
         amount=Decimal(str(data.amount)),
-        payment_id=payment.id,
-        description=f"Плащане за {data.month}" if data.month else None
+        reference_type=TransactionReference.PAYMENT,
+        reference_id=payment.id,
+        description=f"Плащане за {data.month}" if data.month else f"Плащане #{payment.id}"
     )
     
     # Create receipt automatically
@@ -371,12 +362,14 @@ async def void_payment(
     
     SECURITY: Само администратори могат да анулират плащания.
     ВАЖНО: Плащанията НИКОГА не се изтриват физически!
-    Тази операция:
-    - Маркира плащането като voided
+    
+    С новата архитектура без кеширан баланс:
+    - Маркира плащането като voided (няма да се брои при изчисление на баланса)
     - Записва причината за анулиране (задължителна)
     - Записва кой и кога е анулирал
-    - Коригира баланса на сметката
     - Създава audit log запис
+    - Записва VOID транзакция за одит
+    - НЕ коригира кеширан баланс (защото няма такъв)
     """
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if not payment:
@@ -407,13 +400,15 @@ async def void_payment(
     payment.voided_by_id = current_user.id
     payment.void_reason = data.reason
     
-    # Adjust account balance
+    # Record void transaction for audit (no balance update needed)
     account = get_or_create_account(db, payment.apartment_id)
-    transaction = remove_credit_from_account(
+    record_transaction(
         db=db,
         account=account,
+        transaction_type=TransactionType.DEBIT,
         amount=Decimal(str(payment.amount)),
-        payment_id=payment.id,
+        reference_type=TransactionReference.VOID,
+        reference_id=payment.id,
         description=f"Анулиране: {data.reason}"
     )
     
@@ -445,7 +440,9 @@ async def void_payment(
     
     db.commit()
     db.refresh(payment)
-    db.refresh(account)
+    
+    # Calculate new balance dynamically
+    new_balance = calculate_balance(db, payment.apartment_id)
     
     return PaymentVoidResponse(
         success=True,
@@ -455,5 +452,5 @@ async def void_payment(
         voided_by_id=current_user.id,
         void_reason=data.reason,
         balance_adjustment=-float(payment.amount),
-        new_balance=float(account.balance),
+        new_balance=float(new_balance),
     )

@@ -1,22 +1,25 @@
 """ApartmentAccount model - сметка на апартамент.
 
-Всеки апартамент има сметка с баланс:
-- Плащане → добавя към баланса (кредит)
-- Задължение → изважда от баланса (дебит)
-- Баланс < 0 → апартаментът дължи
-- Баланс >= 0 → всичко е платено
+АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+Балансът се изчислява динамично като:
+  balance = sum(payments) - sum(obligations)
+
+Това елиминира проблемите със sync при директни DB операции.
 """
 
 from enum import Enum
 from decimal import Decimal
-from sqlalchemy import String, Numeric, Text, ForeignKey, Enum as SQLEnum
+from sqlalchemy import String, Numeric, Text, ForeignKey, Enum as SQLEnum, select, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 from typing import Optional, TYPE_CHECKING
 
 from app.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.apartment import Apartment
+    from app.models.payment import Payment
+    from app.models.obligation import Obligation
 
 
 class TransactionType(str, Enum):
@@ -37,7 +40,7 @@ class TransactionReference(str, Enum):
 class ApartmentAccount(Base, TimestampMixin):
     """Сметка на апартамент.
     
-    Съхранява текущия баланс на апартамента.
+    Балансът се изчислява ДИНАМИЧНО от payments и obligations.
     Положителен баланс = авансово плащане/надплащане.
     Отрицателен баланс = дължима сума.
     
@@ -61,13 +64,8 @@ class ApartmentAccount(Base, TimestampMixin):
         comment="ID на апартамента"
     )
     
-    # Текущ баланс (може да е отрицателен)
-    balance: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2),
-        default=Decimal("0.00"),
-        nullable=False,
-        comment="Текущ баланс в лева (отрицателен = дължи)"
-    )
+    # ПРЕМАХНАТ: Кеширан баланс - вече се изчислява динамично
+    # balance: Mapped[Decimal] - REMOVED
     
     # Relationships
     apartment: Mapped["Apartment"] = relationship(back_populates="account")
@@ -77,33 +75,84 @@ class ApartmentAccount(Base, TimestampMixin):
     )
     
     def __repr__(self) -> str:
-        return f"<ApartmentAccount(id={self.id}, apartment_id={self.apartment_id}, balance={self.balance})>"
+        return f"<ApartmentAccount(id={self.id}, apartment_id={self.apartment_id})>"
+    
+    def calculate_balance(self, db_session) -> Decimal:
+        """Изчислява баланса в реално време.
+        
+        balance = sum(payments) - sum(obligations)
+        
+        Args:
+            db_session: SQLAlchemy session за заявки
+            
+        Returns:
+            Decimal: Текущ баланс (отрицателен = дължи)
+        """
+        from app.models.payment import Payment, PaymentStatus
+        from app.models.obligation import Obligation
+        
+        # Sum active payments (exclude voided)
+        total_payments = db_session.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == self.apartment_id,
+            Payment.status == PaymentStatus.ACTIVE
+        ).scalar() or Decimal("0")
+        
+        # Sum all obligations
+        total_obligations = db_session.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == self.apartment_id
+        ).scalar() or Decimal("0")
+        
+        return Decimal(str(total_payments)) - Decimal(str(total_obligations))
     
     @property
     def is_paid(self) -> bool:
-        """Дали апартаментът е изплатен (баланс >= 0)."""
-        return self.balance >= 0
+        """Дали апартаментът е изплатен (баланс >= 0).
+        
+        ВНИМАНИЕ: Този property изисква db session за изчисление.
+        Използвайте calculate_balance(db) за точен резултат.
+        """
+        # This property cannot work without session
+        # It's kept for backwards compatibility but should use calculate_balance
+        raise NotImplementedError(
+            "Use calculate_balance(db_session) >= 0 instead. "
+            "The is_paid property requires a database session."
+        )
     
     @property
     def amount_owed(self) -> Decimal:
-        """Дължима сума (0 ако няма дълг)."""
-        return abs(self.balance) if self.balance < 0 else Decimal("0.00")
+        """Дължима сума.
+        
+        ВНИМАНИЕ: Този property изисква db session за изчисление.
+        Използвайте calculate_balance(db) за точен резултат.
+        """
+        raise NotImplementedError(
+            "Use abs(min(calculate_balance(db_session), 0)) instead. "
+            "The amount_owed property requires a database session."
+        )
     
     @property
     def amount_credit(self) -> Decimal:
-        """Авансова сума (0 ако няма аванс)."""
-        return self.balance if self.balance > 0 else Decimal("0.00")
+        """Авансова сума.
+        
+        ВНИМАНИЕ: Този property изисква db session за изчисление.
+        Използвайте calculate_balance(db) за точен резултат.
+        """
+        raise NotImplementedError(
+            "Use max(calculate_balance(db_session), 0) instead. "
+            "The amount_credit property requires a database session."
+        )
 
 
 class AccountTransaction(Base, TimestampMixin):
     """Транзакция по сметка на апартамент.
     
-    Записва всяка промяна в баланса за одит.
+    Записва всяка промяна за ОДИТ цели.
+    balance_after е nullable за обратна съвместимост.
     
     Пример:
-        ID | Сметка | Тип    | Сума   | Референция | Баланс след
-        1  | 1      | credit | 50.00  | payment:5  | 50.00
-        2  | 1      | debit  | 30.00  | obligation:3 | 20.00
+        ID | Сметка | Тип    | Сума   | Референция | Описание
+        1  | 1      | credit | 50.00  | payment:5  | Плащане #5
+        2  | 1      | debit  | 30.00  | obligation:3 | Задължение #3
     """
     
     __tablename__ = "account_transactions"
@@ -145,11 +194,11 @@ class AccountTransaction(Base, TimestampMixin):
         comment="ID на свързания запис (payment_id, obligation_id и т.н.)"
     )
     
-    # Баланс след транзакцията
-    balance_after: Mapped[Decimal] = mapped_column(
+    # Баланс след транзакцията - ВЕЧЕ Е OPTIONAL (само за одит история)
+    balance_after: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(10, 2),
-        nullable=False,
-        comment="Баланс на сметката след транзакцията"
+        nullable=True,  # Changed from False to True
+        comment="Баланс на сметката след транзакцията (legacy, за одит)"
     )
     
     # Описание

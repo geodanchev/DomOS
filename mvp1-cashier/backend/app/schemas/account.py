@@ -1,6 +1,8 @@
 """Pydantic schemas за Account модела.
 
-Account-based система за управление на баланси.
+АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+Account е контейнер за audit транзакции.
+Балансът се изчислява динамично, не се съхранява.
 """
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -22,31 +24,34 @@ class TransactionReference(str, Enum):
     OBLIGATION = "obligation"
     ADJUSTMENT = "adjustment"
     MIGRATION = "migration"
+    VOID = "void"
 
 
 class AccountBase(BaseModel):
-    """Базова схема за сметка."""
+    """Базова схема за сметка.
+    
+    Забележка: balance вече НЕ е поле в модела.
+    Изчислява се динамично от payments и obligations.
+    """
     apartment_id: int
-    balance: float = Field(default=0.0, description="Текущ баланс (отрицателен = дължи)")
 
 
 class AccountResponse(AccountBase):
-    """Схема за отговор с данни за сметка."""
+    """Схема за отговор с данни за сметка.
+    
+    balance се предоставя като изчислено поле, не от DB.
+    """
     model_config = ConfigDict(from_attributes=True)
     
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     
-    @property
-    def is_paid(self) -> bool:
-        """Дали апартаментът е изплатен."""
-        return self.balance >= 0
-    
-    @property
-    def amount_owed(self) -> float:
-        """Дължима сума (0 ако няма дълг)."""
-        return abs(self.balance) if self.balance < 0 else 0.0
+    # Balance is now computed, provided externally
+    balance: Optional[float] = Field(
+        default=None,
+        description="Изчислен баланс (отрицателен = дължи). Подава се отделно."
+    )
 
 
 class TransactionBase(BaseModel):
@@ -59,12 +64,18 @@ class TransactionBase(BaseModel):
 
 
 class TransactionResponse(TransactionBase):
-    """Схема за отговор с данни за транзакция."""
+    """Схема за отговор с данни за транзакция.
+    
+    balance_after вече е optional (legacy поле за одит).
+    """
     model_config = ConfigDict(from_attributes=True)
     
     id: int
     account_id: int
-    balance_after: float
+    balance_after: Optional[float] = Field(
+        default=None,
+        description="Legacy поле - баланс след транзакцията (вече не се изчислява)"
+    )
     created_at: datetime
 
 
@@ -74,7 +85,11 @@ class AccountWithTransactions(AccountResponse):
 
 
 class AdjustmentCreate(BaseModel):
-    """Схема за ръчна корекция на баланс."""
+    """Схема за ръчна корекция.
+    
+    Забележка: С новата архитектура, корекциите се записват
+    като транзакции само за одит. Не обновяват кеширан баланс.
+    """
     apartment_id: int
     amount: float = Field(..., description="Сума (положителна = кредит, отрицателна = дебит)")
     description: str = Field(..., description="Причина за корекцията")
