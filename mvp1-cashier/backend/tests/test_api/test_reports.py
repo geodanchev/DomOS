@@ -193,7 +193,7 @@ class TestOutstandingDebtsReport:
         debtors = data["debtors"]
 
         if len(debtors) > 1:
-            amounts = [d["amount_due"] for d in debtors]
+            amounts = [d["amount_owed"] for d in debtors]
             assert amounts == sorted(amounts, reverse=True)
 
 

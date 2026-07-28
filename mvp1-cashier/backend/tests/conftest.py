@@ -47,6 +47,35 @@ def get_previous_month() -> str:
     return f"{today.year}-{today.month - 1:02d}"
 
 
+def calculate_balance(db: Session, apartment_id: int) -> Decimal:
+    """Calculate balance dynamically from payments and obligations.
+    
+    balance = sum(active payments) - sum(obligations)
+    
+    Args:
+        db: Database session
+        apartment_id: ID of the apartment
+        
+    Returns:
+        Decimal: Current balance (negative = owes)
+    """
+    from sqlalchemy import func
+    from app.models.payment import Payment, PaymentStatus
+    from app.models.obligation import Obligation
+    
+    # Sum active payments only (exclude voided)
+    total_payments = db.query(func.sum(Payment.amount)).filter(
+        Payment.apartment_id == apartment_id,
+        Payment.status == PaymentStatus.ACTIVE
+    ).scalar() or Decimal("0")
+    
+    total_obligations = db.query(func.sum(Obligation.amount)).filter(
+        Obligation.apartment_id == apartment_id
+    ).scalar() or Decimal("0")
+    
+    return Decimal(str(total_payments)) - Decimal(str(total_obligations))
+
+
 # ============== Database Fixtures ==============
 
 # Use in-memory SQLite for tests
@@ -183,11 +212,13 @@ def sample_apartment_no_account(test_db: Session) -> Apartment:
 
 @pytest.fixture(scope="function")
 def sample_apartment(test_db: Session, sample_apartment_no_account: Apartment) -> Apartment:
-    """Create a sample apartment WITH an associated account for testing."""
-    # Create associated account
+    """Create a sample apartment WITH an associated account for testing.
+    
+    Note: Balance is now calculated dynamically, not stored in account.
+    """
+    # Create associated account (balance is calculated dynamically)
     account = ApartmentAccount(
-        apartment_id=sample_apartment_no_account.id,
-        balance=Decimal("0.00")
+        apartment_id=sample_apartment_no_account.id
     )
     test_db.add(account)
     test_db.commit()
@@ -212,10 +243,9 @@ def multiple_apartments(test_db: Session) -> list[Apartment]:
         test_db.commit()
         test_db.refresh(apartment)
         
-        # Create associated account
+        # Create associated account (balance is calculated dynamically)
         account = ApartmentAccount(
-            apartment_id=apartment.id,
-            balance=Decimal("0.00")
+            apartment_id=apartment.id
         )
         test_db.add(account)
         test_db.commit()
@@ -436,13 +466,9 @@ def sample_charge(test_db: Session, sample_apartment: Apartment) -> Obligation:
     test_db.commit()
     test_db.refresh(obligation)
     
-    # Update account balance to show debt (negative = owes money)
-    account = test_db.query(ApartmentAccount).filter(
-        ApartmentAccount.apartment_id == sample_apartment.id
-    ).first()
-    if account:
-        account.balance = Decimal("-15.00")
-        test_db.commit()
+    # Note: Balance is now calculated dynamically from payments and obligations.
+    # No need to update account.balance - creating the obligation automatically
+    # affects the calculated balance.
     
     return obligation
 

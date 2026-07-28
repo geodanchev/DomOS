@@ -15,6 +15,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.models.account import ApartmentAccount, AccountTransaction, TransactionType, TransactionReference
 from app.models.audit_log import AuditLog, AuditAction
 from app.models.user import User
+from tests.conftest import calculate_balance
 
 
 class TestVoidPayment:
@@ -46,11 +47,8 @@ class TestVoidPayment:
         assert create_response.status_code == 201
         payment_id = create_response.json()["id"]
         
-        # Get initial balance
-        account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        initial_balance = float(account.balance)
+        # Get initial balance (calculated dynamically, includes the just-created payment)
+        initial_balance = float(calculate_balance(test_db, sample_apartment.id))
         
         # Void the payment (admin only)
         void_response = client.post(
@@ -118,12 +116,9 @@ class TestVoidPayment:
         sample_apartment: Apartment,
         test_db: Session,
     ):
-        """Should subtract payment amount from account balance (admin only)."""
-        # Get or create account and record initial balance
-        from app.api.payments import get_or_create_account
-        account = get_or_create_account(test_db, sample_apartment.id)
-        test_db.commit()
-        initial_balance = Decimal(str(account.balance))
+        """Should affect calculated balance when payment is voided (admin only)."""
+        # Record initial balance (calculated dynamically)
+        initial_balance = Decimal(str(calculate_balance(test_db, sample_apartment.id)))
         
         # Create payment (cashier can do this)
         create_response = client.post(
@@ -138,8 +133,7 @@ class TestVoidPayment:
         payment_id = create_response.json()["id"]
         
         # Balance should have increased
-        test_db.refresh(account)
-        balance_after_payment = Decimal(str(account.balance))
+        balance_after_payment = Decimal(str(calculate_balance(test_db, sample_apartment.id)))
         assert balance_after_payment == initial_balance + Decimal("100.00")
         
         # Void payment (admin only)
@@ -150,8 +144,8 @@ class TestVoidPayment:
         )
         
         # Balance should be back to initial
-        test_db.refresh(account)
-        assert Decimal(str(account.balance)) == initial_balance
+        final_balance = Decimal(str(calculate_balance(test_db, sample_apartment.id)))
+        assert final_balance == initial_balance
     
     def test_void_payment_creates_debit_transaction(
         self,

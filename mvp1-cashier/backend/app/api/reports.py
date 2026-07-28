@@ -129,23 +129,36 @@ async def get_outstanding_debts(
 ):
     """Справка за дължими суми (длъжници).
     
-    Използва account-based система.
+    АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+    Балансът се изчислява динамично за всеки апартамент.
     Връща апартаменти с отрицателен баланс (дължат).
     """
-    # Query all accounts with negative balance
-    accounts = db.query(ApartmentAccount).filter(
-        ApartmentAccount.balance < 0
-    ).all()
+    from app.models.payment import Payment, PaymentStatus
+    
+    # Get all apartments and calculate their balances dynamically
+    apartments = db.query(Apartment).all()
     
     debtors = []
-    for account in accounts:
-        apartment = db.query(Apartment).filter(Apartment.id == account.apartment_id).first()
-        if apartment:
+    for apartment in apartments:
+        # Calculate balance dynamically: sum(active payments) - sum(obligations)
+        total_payments = db.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == apartment.id,
+            Payment.status == PaymentStatus.ACTIVE
+        ).scalar() or Decimal("0")
+        
+        total_obligations = db.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == apartment.id
+        ).scalar() or Decimal("0")
+        
+        balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
+        
+        # Only include apartments with negative balance (debtors)
+        if balance < 0:
             debtors.append({
                 "apartment_id": apartment.id,
                 "apartment_number": apartment.number,
                 "owner_name": apartment.owner_name,
-                "amount_owed": abs(float(account.balance)),
+                "amount_owed": abs(float(balance)),
             })
     
     debtors.sort(key=lambda x: x['amount_owed'], reverse=True)
@@ -326,20 +339,36 @@ async def export_debts_excel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Excel експорт на справка за длъжници."""
-    # Get debtors data
-    accounts = db.query(ApartmentAccount).filter(
-        ApartmentAccount.balance < 0
-    ).all()
+    """Excel експорт на справка за длъжници.
+    
+    АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+    Балансът се изчислява динамично за всеки апартамент.
+    """
+    from app.models.payment import Payment, PaymentStatus
+    
+    # Get all apartments and calculate their balances dynamically
+    apartments = db.query(Apartment).all()
     
     debtors = []
-    for account in accounts:
-        apartment = db.query(Apartment).filter(Apartment.id == account.apartment_id).first()
-        if apartment:
+    for apartment in apartments:
+        # Calculate balance dynamically: sum(active payments) - sum(obligations)
+        total_payments = db.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == apartment.id,
+            Payment.status == PaymentStatus.ACTIVE
+        ).scalar() or Decimal("0")
+        
+        total_obligations = db.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == apartment.id
+        ).scalar() or Decimal("0")
+        
+        balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
+        
+        # Only include apartments with negative balance (debtors)
+        if balance < 0:
             debtors.append({
                 "apartment_number": apartment.number,
                 "owner_name": apartment.owner_name,
-                "amount_owed": abs(float(account.balance)),
+                "amount_owed": abs(float(balance)),
             })
     
     debtors.sort(key=lambda x: x['amount_owed'], reverse=True)

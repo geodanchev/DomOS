@@ -1,7 +1,8 @@
 """CRUD услуга за управление на задължения (Obligation).
 
-Актуализирано за account-based система.
-При създаване на задължение се дебитира сметката на апартамента.
+АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+Задълженията се записват директно. Балансът се изчислява динамично.
+AccountTransaction се използва само за одит цели.
 """
 
 from typing import Optional
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.obligation import Obligation, ObligationType
 from app.models.apartment import Apartment
 from app.models.account import ApartmentAccount, AccountTransaction, TransactionType, TransactionReference
-from app.models.payment import Payment
+from app.models.payment import Payment, PaymentStatus
 from app.schemas.obligation import (
     ObligationCreate,
     ObligationUpdate,
@@ -22,99 +23,89 @@ from app.schemas.obligation import (
 
 
 class ObligationService:
-    """Услуга за CRUD операции със задължения."""
+    """Услуга за CRUD операции със задължения.
+    
+    С новата архитектура без кеширан баланс, услугата:
+    - Записва задължения директно в базата
+    - Записва audit транзакции (без balance_after)
+    - НЕ обновява кеширан баланс
+    """
     
     def __init__(self, db: Session):
         self.db = db
     
-    # ==================== Account helpers ====================
+    # ==================== Helper functions ====================
+    
+    def _calculate_balance(self, apartment_id: int) -> Decimal:
+        """Calculate balance dynamically from payments and obligations.
+        
+        balance = sum(active payments) - sum(obligations)
+        """
+        total_payments = self.db.query(func.sum(Payment.amount)).filter(
+            Payment.apartment_id == apartment_id,
+            Payment.status == PaymentStatus.ACTIVE
+        ).scalar() or Decimal("0")
+        
+        total_obligations = self.db.query(func.sum(Obligation.amount)).filter(
+            Obligation.apartment_id == apartment_id
+        ).scalar() or Decimal("0")
+        
+        return Decimal(str(total_payments)) - Decimal(str(total_obligations))
     
     def _get_or_create_account(self, apartment_id: int) -> ApartmentAccount:
-        """Get or create account for apartment."""
+        """Get or create account for apartment.
+        
+        Account is now just a container for audit transactions.
+        Balance is calculated dynamically, not stored.
+        """
         account = self.db.query(ApartmentAccount).filter(
             ApartmentAccount.apartment_id == apartment_id
         ).first()
         
         if not account:
-            # Calculate initial balance from existing data
-            total_payments = self.db.query(func.sum(Payment.amount)).filter(
-                Payment.apartment_id == apartment_id
-            ).scalar() or Decimal("0")
-            
-            total_obligations = self.db.query(func.sum(Obligation.amount)).filter(
-                Obligation.apartment_id == apartment_id
-            ).scalar() or Decimal("0")
-            
-            balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
-            
-            account = ApartmentAccount(
-                apartment_id=apartment_id,
-                balance=balance
-            )
+            # Simply create account without balance calculation
+            account = ApartmentAccount(apartment_id=apartment_id)
             self.db.add(account)
             self.db.flush()
         
         return account
     
-    def _debit_account(
+    def _record_transaction(
         self,
         account: ApartmentAccount,
+        transaction_type: TransactionType,
         amount: Decimal,
-        obligation_id: int,
+        reference_type: TransactionReference,
+        reference_id: int,
         description: str | None = None
     ) -> AccountTransaction:
-        """Debit account and create transaction record."""
-        # Update balance
-        new_balance = Decimal(str(account.balance)) - amount
-        account.balance = new_balance
+        """Record a transaction for audit purposes.
         
-        # Create transaction record
+        Note: balance_after is no longer calculated/stored.
+        Transactions are purely for audit trail.
+        """
         transaction = AccountTransaction(
             account_id=account.id,
-            type=TransactionType.DEBIT,
+            type=transaction_type,
             amount=amount,
-            reference_type=TransactionReference.OBLIGATION,
-            reference_id=obligation_id,
-            balance_after=new_balance,
-            description=description or f"Задължение #{obligation_id}"
+            reference_type=reference_type,
+            reference_id=reference_id,
+            balance_after=None,  # No longer storing cached balance
+            description=description
         )
         self.db.add(transaction)
-        
-        return transaction
-    
-    def _credit_account(
-        self,
-        account: ApartmentAccount,
-        amount: Decimal,
-        obligation_id: int,
-        description: str | None = None
-    ) -> AccountTransaction:
-        """Credit account (for obligation deletion/reduction)."""
-        new_balance = Decimal(str(account.balance)) + amount
-        account.balance = new_balance
-        
-        transaction = AccountTransaction(
-            account_id=account.id,
-            type=TransactionType.CREDIT,
-            amount=amount,
-            reference_type=TransactionReference.ADJUSTMENT,
-            reference_id=obligation_id,
-            balance_after=new_balance,
-            description=description or f"Сторно задължение #{obligation_id}"
-        )
-        self.db.add(transaction)
-        
         return transaction
     
     # ==================== CRUD операции ====================
     
     def create(self, data: ObligationCreate) -> Obligation:
-        """Създава ново задължение и дебитира сметката."""
-        # IMPORTANT: Get/create account BEFORE adding the obligation to avoid double-counting
-        # The _get_or_create_account calculates initial balance from existing obligations,
-        # so we must call it before the new obligation is added to the session.
-        account = self._get_or_create_account(data.apartment_id)
+        """Създава ново задължение.
         
+        С новата архитектура:
+        - Записва задължението директно
+        - Записва audit транзакция
+        - НЕ обновява кеширан баланс
+        """
         obligation = Obligation(
             type=data.type,
             apartment_id=data.apartment_id,
@@ -125,11 +116,14 @@ class ObligationService:
         self.db.add(obligation)
         self.db.flush()  # Get obligation ID
         
-        # Debit account
-        self._debit_account(
+        # Record audit transaction (no balance update)
+        account = self._get_or_create_account(data.apartment_id)
+        self._record_transaction(
             account=account,
+            transaction_type=TransactionType.DEBIT,
             amount=Decimal(str(data.amount)),
-            obligation_id=obligation.id,
+            reference_type=TransactionReference.OBLIGATION,
+            reference_id=obligation.id,
             description=data.description or f"{data.type.value} задължение"
         )
         
@@ -184,7 +178,13 @@ class ObligationService:
         return list(self.db.execute(stmt).scalars().all())
     
     def update(self, obligation_id: int, data: ObligationUpdate) -> Optional[Obligation]:
-        """Актуализира задължение."""
+        """Актуализира задължение.
+        
+        С новата архитектура:
+        - Обновява задължението директно
+        - Записва audit транзакция при промяна на сумата
+        - НЕ обновява кеширан баланс
+        """
         obligation = self.get(obligation_id)
         if not obligation:
             return None
@@ -195,7 +195,7 @@ class ObligationService:
         for field, value in update_data.items():
             setattr(obligation, field, value)
         
-        # If amount changed, adjust the account
+        # If amount changed, record adjustment transaction for audit
         if "amount" in update_data:
             new_amount = Decimal(str(update_data["amount"]))
             amount_diff = new_amount - old_amount
@@ -203,19 +203,23 @@ class ObligationService:
             if amount_diff != 0:
                 account = self._get_or_create_account(obligation.apartment_id)
                 if amount_diff > 0:
-                    # Increased - debit more
-                    self._debit_account(
+                    # Increased - record debit transaction
+                    self._record_transaction(
                         account=account,
+                        transaction_type=TransactionType.DEBIT,
                         amount=amount_diff,
-                        obligation_id=obligation.id,
+                        reference_type=TransactionReference.ADJUSTMENT,
+                        reference_id=obligation.id,
                         description=f"Увеличение на задължение #{obligation.id}"
                     )
                 else:
-                    # Decreased - credit back
-                    self._credit_account(
+                    # Decreased - record credit transaction
+                    self._record_transaction(
                         account=account,
+                        transaction_type=TransactionType.CREDIT,
                         amount=abs(amount_diff),
-                        obligation_id=obligation.id,
+                        reference_type=TransactionReference.ADJUSTMENT,
+                        reference_id=obligation.id,
                         description=f"Намаление на задължение #{obligation.id}"
                     )
         
@@ -224,17 +228,25 @@ class ObligationService:
         return obligation
     
     def delete(self, obligation_id: int) -> bool:
-        """Изтрива задължение и кредитира обратно сметката."""
+        """Изтрива задължение.
+        
+        С новата архитектура:
+        - Изтрива задължението директно
+        - Записва audit транзакция
+        - НЕ обновява кеширан баланс
+        """
         obligation = self.get(obligation_id)
         if not obligation:
             return False
         
-        # Credit back the amount
+        # Record credit transaction for audit
         account = self._get_or_create_account(obligation.apartment_id)
-        self._credit_account(
+        self._record_transaction(
             account=account,
+            transaction_type=TransactionType.CREDIT,
             amount=Decimal(str(obligation.amount)),
-            obligation_id=obligation.id,
+            reference_type=TransactionReference.ADJUSTMENT,
+            reference_id=obligation.id,
             description=f"Изтрито задължение: {obligation.description or obligation.type.value}"
         )
         
@@ -265,9 +277,6 @@ class ObligationService:
             if existing:
                 continue
             
-            # IMPORTANT: Get/create account BEFORE adding the obligation to avoid double-counting
-            account = self._get_or_create_account(apt.id)
-            
             # Създаваме ново месечно задължение
             obligation = Obligation(
                 type=ObligationType.MONTHLY,
@@ -279,11 +288,14 @@ class ObligationService:
             self.db.add(obligation)
             self.db.flush()  # Get obligation ID
             
-            # Debit account
-            self._debit_account(
+            # Record audit transaction (no balance update)
+            account = self._get_or_create_account(apt.id)
+            self._record_transaction(
                 account=account,
+                transaction_type=TransactionType.DEBIT,
                 amount=Decimal(str(apt.monthly_fee)),
-                obligation_id=obligation.id,
+                reference_type=TransactionReference.OBLIGATION,
+                reference_id=obligation.id,
                 description=f"Месечна такса за {month}"
             )
             
@@ -299,24 +311,8 @@ class ObligationService:
     # ==================== Статистики ====================
     
     def get_apartment_balance(self, apartment_id: int) -> float:
-        """Връща текущия баланс на апартамент."""
-        account = self.db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == apartment_id
-        ).first()
-        
-        if account:
-            return float(account.balance)
-        
-        # Calculate from payments and obligations if no account
-        total_payments = self.db.query(func.sum(Payment.amount)).filter(
-            Payment.apartment_id == apartment_id
-        ).scalar() or Decimal("0")
-        
-        total_obligations = self.db.query(func.sum(Obligation.amount)).filter(
-            Obligation.apartment_id == apartment_id
-        ).scalar() or Decimal("0")
-        
-        return float(Decimal(str(total_payments)) - Decimal(str(total_obligations)))
+        """Връща текущия баланс на апартамент (изчислен динамично)."""
+        return float(self._calculate_balance(apartment_id))
     
     def get_summary(
         self,
@@ -327,7 +323,7 @@ class ObligationService:
         """Връща обобщена статистика за задълженията."""
         # Build filters
         obl_filters = []
-        payment_filters = []
+        payment_filters = [Payment.status == PaymentStatus.ACTIVE]  # Only active payments
         
         if apartment_id:
             obl_filters.append(Obligation.apartment_id == apartment_id)

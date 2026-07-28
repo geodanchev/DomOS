@@ -1,7 +1,10 @@
 """Dashboard API endpoints - табло за касиера.
 
-Актуализирано за account-based система.
-Статусът на апартамент се определя от баланса на сметката.
+АРХИТЕКТУРА БЕЗ КЕШИРАН БАЛАНС:
+Балансът се изчислява динамично като:
+  balance = sum(active payments) - sum(obligations)
+
+Няма четене от account.balance - всичко е в реално време.
 """
 
 from datetime import date
@@ -14,7 +17,7 @@ from app.db.session import get_db
 from app.models.apartment import Apartment
 from app.models.account import ApartmentAccount
 from app.models.obligation import Obligation
-from app.models.payment import Payment
+from app.models.payment import Payment, PaymentStatus
 from app.models.user import User
 from app.models.expense import Expense, ExpenseStatus
 from app.schemas.statistics import CashierDashboard, ApartmentStatus, FundBalance
@@ -27,6 +30,27 @@ def get_current_month() -> str:
     """Get current month in YYYY-MM format."""
     today = date.today()
     return f"{today.year}-{today.month:02d}"
+
+
+def calculate_apartment_balance(db: Session, apartment_id: int) -> Decimal:
+    """Calculate balance dynamically for a single apartment.
+    
+    balance = sum(active payments) - sum(obligations)
+    
+    Returns:
+        Decimal: Current balance (negative = owes)
+    """
+    # Sum active payments only (exclude voided)
+    total_payments = db.query(func.sum(Payment.amount)).filter(
+        Payment.apartment_id == apartment_id,
+        Payment.status == PaymentStatus.ACTIVE
+    ).scalar() or Decimal("0")
+    
+    total_obligations = db.query(func.sum(Obligation.amount)).filter(
+        Obligation.apartment_id == apartment_id
+    ).scalar() or Decimal("0")
+    
+    return Decimal(str(total_payments)) - Decimal(str(total_obligations))
 
 
 def get_status_from_balance(balance: Decimal) -> tuple[str, str]:
@@ -55,13 +79,13 @@ async def get_dashboard(
     Това е основният екран за касиера.
     Показва:
     - Колко апартамента има
-    - Баланс на всеки апартамент
+    - Баланс на всеки апартамент (изчислен динамично)
     - Кой е платил, кой дължи
     - Процент събираемост
     """
     current_month = get_current_month()
     
-    # Get all apartments with their accounts
+    # Get all apartments
     apartments = db.query(Apartment).order_by(Apartment.number).all()
     total_apartments = len(apartments)
     
@@ -73,34 +97,13 @@ async def get_dashboard(
     owes_count = 0
     
     for apt in apartments:
-        # Get or create account for apartment
-        account = apt.account
-        
-        if account:
-            balance = Decimal(str(account.balance))
-        else:
-            # No account yet - calculate from payments and obligations
-            total_payments = db.query(func.sum(Payment.amount)).filter(
-                Payment.apartment_id == apt.id
-            ).scalar() or Decimal("0")
-            
-            total_obligations = db.query(func.sum(Obligation.amount)).filter(
-                Obligation.apartment_id == apt.id
-            ).scalar() or Decimal("0")
-            
-            balance = Decimal(str(total_payments)) - Decimal(str(total_obligations))
-            
-            # Create account for this apartment
-            account = ApartmentAccount(
-                apartment_id=apt.id,
-                balance=balance
-            )
-            db.add(account)
-            db.commit()
+        # Calculate balance dynamically
+        balance = calculate_apartment_balance(db, apt.id)
         
         # Calculate totals for this apartment
         apt_total_payments = db.query(func.sum(Payment.amount)).filter(
-            Payment.apartment_id == apt.id
+            Payment.apartment_id == apt.id,
+            Payment.status == PaymentStatus.ACTIVE
         ).scalar() or Decimal("0")
         
         apt_total_obligations = db.query(func.sum(Obligation.amount)).filter(
@@ -153,12 +156,14 @@ async def get_fund_balance(
     """Get building fund balance.
     
     Колко пари има във фонда:
-    - total_collected_all_time: общо събрани от всички плащания
+    - total_collected_all_time: общо събрани от всички активни плащания
     - total_expenses: общо платени разходи (само със статус PAID)
     - current_balance: налично салдо = събрани - разходи
     """
-    # Sum all payments (income)
-    total_collected = db.query(func.sum(Payment.amount)).scalar() or Decimal("0")
+    # Sum all active payments (income)
+    total_collected = db.query(func.sum(Payment.amount)).filter(
+        Payment.status == PaymentStatus.ACTIVE
+    ).scalar() or Decimal("0")
     
     # Sum all paid expenses (outcome)
     total_expenses = db.query(func.sum(Expense.amount)).filter(

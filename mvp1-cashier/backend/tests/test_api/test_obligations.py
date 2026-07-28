@@ -21,7 +21,7 @@ from app.models.account import ApartmentAccount, AccountTransaction, Transaction
 from app.models.apartment import Apartment
 from app.services.obligation_service import ObligationService
 from app.schemas.obligation import ObligationCreate, ObligationUpdate
-from tests.conftest import get_current_month
+from tests.conftest import get_current_month, calculate_balance
 
 
 # ============== ObligationService Unit Tests ==============
@@ -50,14 +50,11 @@ class TestObligationServiceCreate:
         assert obligation.description == "Месечна такса"
     
     def test_create_obligation_debits_account(self, test_db: Session, sample_apartment: Apartment):
-        """Test that creating an obligation debits the apartment account."""
+        """Test that creating an obligation affects the calculated balance."""
         service = ObligationService(test_db)
         
-        # Get initial balance (may already exist from other operations)
-        initial_account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        initial_balance = float(initial_account.balance) if initial_account else 0.0
+        # Get initial balance (calculated dynamically)
+        initial_balance = float(calculate_balance(test_db, sample_apartment.id))
         
         data = ObligationCreate(
             type=ObligationType.MONTHLY,
@@ -68,12 +65,9 @@ class TestObligationServiceCreate:
         
         obligation = service.create(data)
         
-        # Check account was created/updated and debited by 15.0
-        account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        assert account is not None
-        assert float(account.balance) == initial_balance - 15.0
+        # Check balance changed by -15.0 (obligation decreases balance)
+        new_balance = float(calculate_balance(test_db, sample_apartment.id))
+        assert new_balance == initial_balance - 15.0
         
         # Check transaction was recorded
         transaction = test_db.query(AccountTransaction).filter(
@@ -86,13 +80,28 @@ class TestObligationServiceCreate:
     
     def test_create_obligation_uses_existing_account(self, test_db: Session, sample_apartment_no_account: Apartment):
         """Test that create uses existing account if present."""
-        # Create account with positive balance (using apartment without pre-existing account)
+        from app.models.payment import Payment, PaymentStatus
+        
+        # Create account for apartment
         existing_account = ApartmentAccount(
-            apartment_id=sample_apartment_no_account.id,
-            balance=Decimal("50.00"),
+            apartment_id=sample_apartment_no_account.id
         )
         test_db.add(existing_account)
+        
+        # Create a payment to give positive balance (simulating 50.00 advance)
+        payment = Payment(
+            apartment_id=sample_apartment_no_account.id,
+            amount=Decimal("50.00"),
+            month="2026-01",
+            payment_method="cash",
+            status=PaymentStatus.ACTIVE
+        )
+        test_db.add(payment)
         test_db.commit()
+        
+        # Verify initial balance is 50.00
+        initial_balance = float(calculate_balance(test_db, sample_apartment_no_account.id))
+        assert initial_balance == 50.0
         
         service = ObligationService(test_db)
         data = ObligationCreate(
@@ -104,8 +113,9 @@ class TestObligationServiceCreate:
         
         service.create(data)
         
-        test_db.refresh(existing_account)
-        assert float(existing_account.balance) == 35.0  # 50 - 15
+        # Balance should be 50 - 15 = 35
+        new_balance = float(calculate_balance(test_db, sample_apartment_no_account.id))
+        assert new_balance == 35.0
     
     def test_create_penalty_obligation(self, test_db: Session, sample_apartment: Apartment):
         """Test creating a penalty obligation."""
@@ -272,14 +282,11 @@ class TestObligationServiceUpdate:
         assert result is None
     
     def test_update_obligation_amount_increase_debits_account(self, test_db: Session, sample_apartment: Apartment):
-        """Test that increasing amount debits the account."""
+        """Test that increasing amount affects the calculated balance."""
         service = ObligationService(test_db)
         
-        # Get initial balance
-        initial_account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        initial_balance = float(initial_account.balance) if initial_account else 0.0
+        # Get initial balance (calculated dynamically)
+        initial_balance = float(calculate_balance(test_db, sample_apartment.id))
         
         # Create obligation
         create_data = ObligationCreate(
@@ -291,29 +298,23 @@ class TestObligationServiceUpdate:
         obligation = service.create(create_data)
         
         # Balance after create should be initial - 15
-        account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        balance_after_create = float(account.balance)
+        balance_after_create = float(calculate_balance(test_db, sample_apartment.id))
         assert balance_after_create == initial_balance - 15.0
         
         # Update amount to higher value
         update_data = ObligationUpdate(amount=25.0)
         service.update(obligation.id, update_data)
         
-        # Check account balance decreased by additional 10
-        test_db.refresh(account)
-        assert float(account.balance) == balance_after_create - 10.0  # Debited 10 more
+        # Check balance decreased by additional 10
+        new_balance = float(calculate_balance(test_db, sample_apartment.id))
+        assert new_balance == balance_after_create - 10.0  # Debited 10 more
     
     def test_update_obligation_amount_decrease_credits_account(self, test_db: Session, sample_apartment: Apartment):
-        """Test that decreasing amount credits the account."""
+        """Test that decreasing amount affects the calculated balance."""
         service = ObligationService(test_db)
         
-        # Get initial balance
-        initial_account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        initial_balance = float(initial_account.balance) if initial_account else 0.0
+        # Get initial balance (calculated dynamically)
+        initial_balance = float(calculate_balance(test_db, sample_apartment.id))
         
         # Create obligation
         create_data = ObligationCreate(
@@ -325,19 +326,16 @@ class TestObligationServiceUpdate:
         obligation = service.create(create_data)
         
         # Balance after create should be initial - 25
-        account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        balance_after_create = float(account.balance)
+        balance_after_create = float(calculate_balance(test_db, sample_apartment.id))
         assert balance_after_create == initial_balance - 25.0
         
         # Update amount to lower value
         update_data = ObligationUpdate(amount=15.0)
         service.update(obligation.id, update_data)
         
-        # Check account balance increased by 10 (credited back)
-        test_db.refresh(account)
-        assert float(account.balance) == balance_after_create + 10.0  # Credited 10 back
+        # Check balance increased by 10 (credited back)
+        new_balance = float(calculate_balance(test_db, sample_apartment.id))
+        assert new_balance == balance_after_create + 10.0  # Credited 10 back
 
 
 class TestObligationServiceDelete:
@@ -354,14 +352,11 @@ class TestObligationServiceDelete:
         assert service.get(obl_id) is None
     
     def test_delete_obligation_credits_account(self, test_db: Session, sample_apartment: Apartment):
-        """Test that deleting an obligation credits the account."""
+        """Test that deleting an obligation affects the calculated balance."""
         service = ObligationService(test_db)
         
-        # Get initial balance
-        initial_account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        initial_balance = float(initial_account.balance) if initial_account else 0.0
+        # Get initial balance (calculated dynamically)
+        initial_balance = float(calculate_balance(test_db, sample_apartment.id))
         
         # Create obligation
         create_data = ObligationCreate(
@@ -373,18 +368,15 @@ class TestObligationServiceDelete:
         obligation = service.create(create_data)
         
         # Balance after create should be initial - 15
-        account = test_db.query(ApartmentAccount).filter(
-            ApartmentAccount.apartment_id == sample_apartment.id
-        ).first()
-        balance_after_create = float(account.balance)
+        balance_after_create = float(calculate_balance(test_db, sample_apartment.id))
         assert balance_after_create == initial_balance - 15.0
         
         # Delete obligation
         service.delete(obligation.id)
         
-        # Check account balance is back to initial (credited back)
-        test_db.refresh(account)
-        assert float(account.balance) == initial_balance
+        # Check balance is back to initial (credited back)
+        final_balance = float(calculate_balance(test_db, sample_apartment.id))
+        assert final_balance == initial_balance
     
     def test_delete_returns_false_for_invalid_id(self, test_db: Session):
         """Test that delete() returns False for non-existent ID."""
@@ -435,28 +427,22 @@ class TestMonthlyObligationGeneration:
         assert len(second_result) == 0
     
     def test_generate_monthly_debits_accounts(self, test_db: Session, multiple_apartments: list[Apartment]):
-        """Test that generation debits all apartment accounts."""
+        """Test that generation affects calculated balances for all apartments."""
         service = ObligationService(test_db)
         month = "2026-10"  # Unique month to avoid conflicts
         
-        # Get initial balances
+        # Get initial balances (calculated dynamically)
         initial_balances = {}
         for apt in multiple_apartments:
-            account = test_db.query(ApartmentAccount).filter(
-                ApartmentAccount.apartment_id == apt.id
-            ).first()
-            initial_balances[apt.id] = float(account.balance) if account else 0.0
+            initial_balances[apt.id] = float(calculate_balance(test_db, apt.id))
         
         service.generate_monthly_obligations(month)
         
-        # Verify each apartment's account was debited by its monthly fee
+        # Verify each apartment's balance decreased by its monthly fee
         for apt in multiple_apartments:
-            account = test_db.query(ApartmentAccount).filter(
-                ApartmentAccount.apartment_id == apt.id
-            ).first()
-            assert account is not None
             expected_balance = initial_balances[apt.id] - float(apt.monthly_fee)
-            assert float(account.balance) == expected_balance
+            new_balance = float(calculate_balance(test_db, apt.id))
+            assert new_balance == expected_balance
 
 
 class TestObligationStatistics:
