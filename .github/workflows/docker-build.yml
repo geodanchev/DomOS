@@ -155,6 +155,16 @@ jobs:
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
             --allow-unauthenticated \
+            --service-account=domos-backend-sa@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --add-cloudsql-instances=${{ env.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:domos-db \
+            --set-secrets=DATABASE_URL=domos-database-url:latest,SECRET_KEY=domos-secret-key:latest \
+            --set-env-vars=ENVIRONMENT=production,CORS_ORIGINS=https://domos-cashier-frontend-985395022174.europe-west3.run.app \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=300 \
+            --concurrency=80 \
+            --min-instances=0 \
+            --max-instances=10 \
             --quiet
       
       - name: Deploy Frontend към Cloud Run
@@ -164,6 +174,12 @@ jobs:
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
             --allow-unauthenticated \
+            --memory=256Mi \
+            --cpu=1 \
+            --timeout=60 \
+            --concurrency=80 \
+            --min-instances=0 \
+            --max-instances=10 \
             --quiet
       
       - name: Извличане на URLs
