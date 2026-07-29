@@ -1,11 +1,15 @@
 # DomOS Cashier MVP - Backend Dockerfile
 FROM python:3.13-slim
 
+# Build arguments for versioning
+ARG GIT_COMMIT_SHA=""
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 
 # Set work directory
 WORKDIR /app

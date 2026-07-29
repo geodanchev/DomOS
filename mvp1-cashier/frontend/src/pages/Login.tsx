@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AxiosError } from 'axios';
@@ -7,12 +7,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import api from '../services/api';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('');
+  
+  // Fetch app version on mount
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const response = await api.get('/health');
+        setAppVersion(response.data.version || '');
+      } catch {
+        // Silently fail - version display is not critical
+        setAppVersion('');
+      }
+    };
+    fetchVersion();
+  }, []);
   
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -40,7 +56,12 @@ const Login: React.FC = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold">🏠 DomOS</CardTitle>
-          <CardDescription className="text-base">Дигитален касиер</CardDescription>
+          <CardDescription className="text-base">
+            Дигитален касиер
+            {appVersion && (
+              <span className="ml-2 text-xs text-muted-foreground/70">({appVersion})</span>
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {/* Error message */}
