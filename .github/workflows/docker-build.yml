@@ -1,4 +1,4 @@
-name: Docker Build & Push
+name: Docker Build, Push & Deploy
 
 on:
   push:
@@ -13,10 +13,19 @@ on:
         description: 'Custom tag for images (optional)'
         required: false
         default: ''
+      skip_deploy:
+        description: 'Skip Cloud Run deployment'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/domos
+  GCP_PROJECT_ID: bionic-region-502615-h8
+  GCP_REGION: europe-west3
+  BACKEND_SERVICE: domos-cashier-backend
+  FRONTEND_SERVICE: domos-cashier-frontend
 
 jobs:
   build-and-push:
@@ -25,6 +34,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      backend_image: ${{ steps.meta-backend.outputs.tags }}
+      frontend_image: ${{ steps.meta-frontend.outputs.tags }}
     
     steps:
       - name: Checkout код
@@ -105,3 +117,72 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta-frontend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+  deploy-to-cloudrun:
+    name: Deploy to Google Cloud Run
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event.inputs.skip_deploy != 'true'
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+      
+      - name: Автентикация в Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Настройка на gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      
+      - name: Вход в GitHub Container Registry (за Cloud Run)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      
+      - name: Deploy Backend към Cloud Run
+        run: |
+          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
+            --image=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:latest \
+            --region=${{ env.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --quiet
+      
+      - name: Deploy Frontend към Cloud Run
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
+            --image=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest \
+            --region=${{ env.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --quiet
+      
+      - name: Извличане на URLs
+        id: urls
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
+          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
+          echo "backend_url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+      
+      - name: Генериране на deployment summary
+        run: |
+          echo "## 🚀 Deployed to Google Cloud Run" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Services" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ steps.urls.outputs.backend_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ steps.urls.outputs.frontend_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project:** ${{ env.GCP_PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region:** ${{ env.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
