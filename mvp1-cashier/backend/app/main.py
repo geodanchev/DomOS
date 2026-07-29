@@ -137,11 +137,20 @@ async def health_check():
     """Basic health check endpoint.
     
     Returns 200 if the application is running.
-    Used for simple health checks.
+    Used for simple health checks and version monitoring.
     """
+    # Build full version string
+    if settings.GIT_COMMIT_SHA:
+        full_version = f"v{settings.APP_VERSION}-{settings.GIT_COMMIT_SHA[:7]}"
+    else:
+        full_version = f"v{settings.APP_VERSION}"
+    
     return {
         "status": "healthy",
-        "version": settings.APP_VERSION,
+        "version": full_version,
+        "app_version": settings.APP_VERSION,
+        "git_commit": settings.GIT_COMMIT_SHA or None,
+        "environment": settings.ENVIRONMENT,
     }
 
 

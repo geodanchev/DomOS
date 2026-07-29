@@ -50,7 +50,15 @@ class Settings(BaseSettings):
     # App info
     APP_NAME: str = "DomOS Cashier MVP"
     APP_VERSION: str = "1.0.0"
+    GIT_COMMIT_SHA: str = ""  # Injected at build time
     DEBUG: bool = True
+    
+    @property
+    def full_version(self) -> str:
+        """Returns full version string with git commit SHA if available."""
+        if self.GIT_COMMIT_SHA:
+            return f"v{self.APP_VERSION}-{self.GIT_COMMIT_SHA[:7]}"
+        return f"v{self.APP_VERSION}"
     
     # Server settings
     # Cloud Run sets PORT automatically, default 8080 for local dev
