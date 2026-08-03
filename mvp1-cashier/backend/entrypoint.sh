@@ -10,27 +10,57 @@ echo "🚀 Starting DomOS Cashier Backend..."
 wait_for_db() {
     echo "⏳ Waiting for database to be ready..."
     
-    # Extract host and port from DATABASE_URL
-    # DATABASE_URL format: postgresql://user:pass@host:port/dbname
-    DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
-    DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
-    
-    # Default values if extraction fails
-    DB_HOST=${DB_HOST:-db}
-    DB_PORT=${DB_PORT:-5432}
-    
-    max_attempts=30
-    attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        if python -c "import socket; s = socket.socket(); s.settimeout(1); s.connect(('$DB_HOST', $DB_PORT)); s.close()" 2>/dev/null; then
-            echo "✅ Database is ready!"
-            return 0
-        fi
-        echo "   Attempt $attempt/$max_attempts - Database not ready yet..."
-        sleep 2
-        attempt=$((attempt + 1))
-    done
+    # Check if using Cloud SQL Unix socket (contains /cloudsql/)
+    if echo "$DATABASE_URL" | grep -q "/cloudsql/"; then
+        echo "   Detected Cloud SQL Unix socket connection"
+        # For Unix socket, use SQLAlchemy to test connection
+        max_attempts=30
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+            if python -c "
+import os
+from sqlalchemy import create_engine, text
+try:
+    engine = create_engine(os.environ['DATABASE_URL'])
+    with engine.connect() as conn:
+        conn.execute(text('SELECT 1'))
+    print('OK')
+except Exception as e:
+    print(f'FAIL: {e}')
+    exit(1)
+" 2>/dev/null; then
+                echo "✅ Database is ready!"
+                return 0
+            fi
+            echo "   Attempt $attempt/$max_attempts - Database not ready yet..."
+            sleep 2
+            attempt=$((attempt + 1))
+        done
+    else
+        # TCP connection (local development, Docker Compose)
+        # Extract host and port from DATABASE_URL
+        # DATABASE_URL format: postgresql://user:pass@host:port/dbname
+        DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
+        DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
+        
+        # Default values if extraction fails
+        DB_HOST=${DB_HOST:-db}
+        DB_PORT=${DB_PORT:-5432}
+        
+        max_attempts=30
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+            if python -c "import socket; s = socket.socket(); s.settimeout(1); s.connect(('$DB_HOST', $DB_PORT)); s.close()" 2>/dev/null; then
+                echo "✅ Database is ready!"
+                return 0
+            fi
+            echo "   Attempt $attempt/$max_attempts - Database not ready yet..."
+            sleep 2
+            attempt=$((attempt + 1))
+        done
+    fi
     
     echo "❌ Database connection failed after $max_attempts attempts"
     exit 1
