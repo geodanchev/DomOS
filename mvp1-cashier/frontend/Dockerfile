@@ -18,8 +18,11 @@ COPY . .
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
 
+# Cache bust to force rebuild when commit changes
+ARG CACHEBUST=1
+
 # Build the application
-RUN npm run build
+RUN echo "Building with VITE_API_URL=$VITE_API_URL (cache: $CACHEBUST)" && npm run build
 
 # Production stage with nginx
 FROM nginx:alpine AS production
