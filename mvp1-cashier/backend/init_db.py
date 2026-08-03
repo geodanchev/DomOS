@@ -132,10 +132,9 @@ def create_apartments_with_accounts(db) -> list:
         db.add(apt)
         db.flush()  # Get the ID
         
-        # Create account for this apartment (starting balance 0)
+        # Create account for this apartment
         account = ApartmentAccount(
-            apartment_id=apt.id,
-            balance=Decimal("0.00")
+            apartment_id=apt.id
         )
         db.add(account)
         apartments.append(apt)

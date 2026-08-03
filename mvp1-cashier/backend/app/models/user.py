@@ -3,7 +3,7 @@
 from enum import Enum
 from sqlalchemy import String, Boolean, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from app.db.base import Base, TimestampMixin
 
@@ -50,6 +50,29 @@ class User(Base, TimestampMixin):
         String(200),
         nullable=False,
         comment="Име за показване (напр. 'Цецка')"
+    )
+    
+    # Email (за нотификации и възстановяване на парола)
+    email: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="Email адрес за нотификации"
+    )
+    
+    # Телефонен номер
+    phone: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Телефонен номер"
+    )
+    
+    # URL към аватар/снимка
+    avatar_url: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="URL към профилна снимка"
     )
     
     # Роля
