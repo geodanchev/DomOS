@@ -20,7 +20,10 @@ RUN npm run build
 # Production stage with nginx
 FROM nginx:alpine AS production
 
-# Copy nginx.cloudrun.conf as template
+# Remove default nginx configs to avoid conflicts
+RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/nginx.conf
+
+# Copy nginx.cloudrun.conf as template (uses ${PORT} variable)
 COPY nginx.cloudrun.conf /etc/nginx/nginx.conf.template
 
 # Copy built assets from builder
