@@ -26,6 +26,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Cache buster - invalidates cache when commit SHA changes
+# This ensures entrypoint.sh and other app files are always fresh
+ARG CACHEBUST=1
+
 # Copy application code
 COPY . .
 
