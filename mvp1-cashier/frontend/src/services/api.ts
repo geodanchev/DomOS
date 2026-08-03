@@ -53,9 +53,17 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Don't redirect if we're already on the login page (e.g., wrong password)
+      // or if this is a login attempt (let the login form handle the error)
+      const isLoginPage = window.location.pathname === '/login';
+      const isLoginRequest = error.config?.url?.includes('/auth/login');
+      
+      if (!isLoginPage && !isLoginRequest) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('permissions');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
