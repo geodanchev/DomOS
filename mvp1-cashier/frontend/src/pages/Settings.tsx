@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usersApi } from '../services/api';
-import type { UserProfileUpdate, PasswordChange } from '../types';
+import type { UserProfileUpdate } from '../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
