@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.api import apartments, payments, auth, dashboard, receipts, reports, obligations, expenses
+from app.api import apartments, payments, auth, dashboard, receipts, reports, obligations, expenses, users
 from app.api import scheduler as scheduler_api
 from app.scheduler import start_scheduler, stop_scheduler
 from app.db.session import SessionLocal, engine
@@ -119,6 +119,7 @@ app.include_router(receipts.router, tags=["Разписки"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Справки"])
 app.include_router(scheduler_api.router, prefix="/api/scheduler", tags=["Scheduler"])
 app.include_router(expenses.router, prefix="/api/expenses", tags=["Разходи"])
+app.include_router(users.router, prefix="/api/users", tags=["Потребителски настройки"])
 
 
 @app.get("/")

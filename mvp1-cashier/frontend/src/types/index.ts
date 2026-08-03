@@ -3,10 +3,32 @@ export interface User {
   id: number;
   username: string;
   display_name: string;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
   role: 'admin' | 'cashier' | 'viewer';
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// User profile update types
+export interface UserProfileUpdate {
+  display_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  avatar_url?: string | null;
+}
+
+export interface PasswordChange {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+export interface UsernameChange {
+  new_username: string;
+  password: string;
 }
 
 // =============================================================================

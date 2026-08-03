@@ -2,6 +2,9 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type {
   LoginResponse,
   User,
+  UserProfileUpdate,
+  PasswordChange,
+  UsernameChange,
   ApartmentList,
   Apartment,
   ApartmentCreate,
@@ -262,6 +265,47 @@ export const receiptsApi = {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  },
+};
+
+// =============================================================================
+// Users API (User Settings)
+// =============================================================================
+
+export const usersApi = {
+  getProfile: async (): Promise<User> => {
+    const response = await api.get<User>('/users/me');
+    return response.data;
+  },
+  
+  updateProfile: async (data: UserProfileUpdate): Promise<User> => {
+    const response = await api.put<User>('/users/me/profile', data);
+    return response.data;
+  },
+  
+  changePassword: async (data: PasswordChange): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/users/me/password', data);
+    return response.data;
+  },
+  
+  changeUsername: async (data: UsernameChange): Promise<User> => {
+    const response = await api.post<User>('/users/me/username', data);
+    return response.data;
+  },
+  
+  uploadAvatar: async (file: File): Promise<User> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await api.post<User>('/users/me/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  
+  deleteAvatar: async (): Promise<User> => {
+    const response = await api.delete<User>('/users/me/avatar');
+    return response.data;
   },
 };
 

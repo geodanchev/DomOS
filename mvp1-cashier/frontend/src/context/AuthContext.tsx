@@ -20,6 +20,7 @@ const DEFAULT_PERMISSIONS: UIPermissions = {
 // =============================================================================
 interface AuthContextType {
   user: User | null;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
   token: string | null;
   permissions: UIPermissions;
   isLoading: boolean;
@@ -140,6 +141,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    setUser,
     token,
     permissions,
     isLoading,

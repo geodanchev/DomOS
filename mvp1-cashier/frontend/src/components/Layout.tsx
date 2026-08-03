@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Wallet, LogOut, User, Building2, Home } from 'lucide-react';
+import { LayoutDashboard, Wallet, LogOut, User, Building2, Home, Settings } from 'lucide-react';
 
 const Layout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -103,20 +103,32 @@ const Layout: React.FC = () => {
             <div className="flex items-center space-x-2">
               {/* Desktop: Full user info with logout button */}
               <div className="hidden md:flex items-center space-x-2">
-                <span className="text-sm text-muted-foreground flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  {user?.display_name}
-                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2">
+                      <User className="h-4 w-4" />
+                      {user?.display_name}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => handleNavigation('/settings')}
+                      className="cursor-pointer gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Настройки
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={logout}
+                      className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Изход
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <ThemeToggle />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={logout}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Изход
-                </Button>
               </div>
 
               {/* Mobile: Username dropdown with logout */}
@@ -130,6 +142,14 @@ const Layout: React.FC = () => {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => handleNavigation('/settings')}
+                      className="cursor-pointer gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Настройки
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={logout}
                       className="cursor-pointer gap-2 text-destructive focus:text-destructive"
