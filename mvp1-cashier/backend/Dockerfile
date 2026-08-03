@@ -32,12 +32,11 @@ COPY . .
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
-# Expose port
-EXPOSE 8000
+# Expose port (Cloud Run uses PORT env variable, default 8080)
+EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+# Note: Cloud Run has its own health check probes, no need for HEALTHCHECK instruction
+# The startup probe checks if the container is listening on PORT
 
 # Use entrypoint script
 ENTRYPOINT ["./entrypoint.sh"]
