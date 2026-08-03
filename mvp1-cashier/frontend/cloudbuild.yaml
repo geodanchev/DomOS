@@ -1,0 +1,32 @@
+# Cloud Build configuration for DomOS Cashier Frontend
+# Supports VITE_API_URL substitution for backend API URL
+
+steps:
+  # Build the Docker image with API URL
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VITE_API_URL=${_VITE_API_URL}'
+      - '-t'
+      - '${_IMAGE_NAME}:${_TAG}'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+  # Push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_IMAGE_NAME}:${_TAG}'
+
+images:
+  - '${_IMAGE_NAME}:${_TAG}'
+
+substitutions:
+  _IMAGE_NAME: europe-west3-docker.pkg.dev/bionic-region-502615-h8/domos/cashier-frontend
+  _TAG: latest
+  _VITE_API_URL: /api
+
+options:
+  logging: CLOUD_LOGGING_ONLY
