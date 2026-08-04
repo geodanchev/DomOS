@@ -24,12 +24,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          token: ${{ secrets.GIT_PAT_WORKFLOW }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       
       - name: Install semantic-release dependencies
         run: |
@@ -46,7 +46,7 @@ jobs:
       
       - name: Run Semantic Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GIT_PAT_WORKFLOW }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GIT_AUTHOR_NAME: semantic-release-bot
           GIT_AUTHOR_EMAIL: semantic-release-bot@users.noreply.github.com
           GIT_COMMITTER_NAME: semantic-release-bot
