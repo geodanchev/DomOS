@@ -71,10 +71,14 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY --chown=appuser:appgroup . .
 
-# Remove unnecessary files
-RUN rm -rf tests/ *.md .env* alembic/ \
+# Remove unnecessary files (keep alembic/ for migrations and entrypoint.prod.sh)
+RUN rm -rf tests/ *.md .env* \
     Dockerfile* .dockerignore .gitignore \
-    *.sh *.backup *.db venv/ .pytest_cache/
+    *.backup *.db venv/ .pytest_cache/ \
+    entrypoint.sh setup-db.sh reset-db.sh backup-db.sh restore-db.sh create-migration.sh
+
+# Keep entrypoint.prod.sh executable
+RUN chmod +x entrypoint.prod.sh
 
 # Switch to non-root user
 USER appuser
@@ -86,6 +90,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose the port Cloud Run expects
 EXPOSE 8080
 
-# Run with uvicorn using python -m to ensure correct path resolution
+# Run entrypoint script which handles migrations and starts uvicorn
 # Cloud Run sends SIGTERM, uvicorn handles graceful shutdown
-CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 65 --access-log --log-level info"]
+CMD ["./entrypoint.prod.sh"]

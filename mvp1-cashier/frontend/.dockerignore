@@ -34,7 +34,6 @@ vitest.config.ts
 !.env.example
 
 # Docker
-Dockerfile*
 docker-compose*
 .dockerignore
 
@@ -48,3 +47,7 @@ docs/
 .DS_Store
 Thumbs.db
 *.log
+
+# Keep Dockerfile.cloudrun, exclude others
+Dockerfile.dev
+docker-compose*

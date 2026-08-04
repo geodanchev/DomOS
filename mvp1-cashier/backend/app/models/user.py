@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 class UserRole(str, Enum):
     """Роля на потребителя."""
-    ADMIN = "admin"      # Администратор
-    CASHIER = "cashier"  # Касиер (Цецка)
-    VIEWER = "viewer"    # Само преглед
+    ADMIN = "ADMIN"      # Администратор
+    CASHIER = "CASHIER"  # Касиер (Цецка)
+    VIEWER = "VIEWER"    # Само преглед
 
 
 class User(Base, TimestampMixin):

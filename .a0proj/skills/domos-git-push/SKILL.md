@@ -280,6 +280,174 @@ Are you pushing changes to .github/workflows/ ?
 └─ NO  → Use GIT_PAT secret replacement
 ```
 
+## Feature Branch Strategy for Experiments
+
+### Why Use Feature Branches?
+
+When trying new approaches, implementations, or experiments:
+- Create a **new branch** for each attempt
+- If the approach fails or causes problems → **simply delete the branch**
+- No need to track what was changed or perform complex rollbacks
+- Clean slate: return to parent branch and start fresh
+
+### Branch Hierarchy
+
+Branches can be nested - you don't always start from `main`:
+
+```
+main
+└── feature/user-auth          ← working feature (stable)
+    ├── experiment/oauth-google   ← try approach 1
+    ├── experiment/oauth-github   ← try approach 2 (if 1 failed)
+    └── experiment/jwt-tokens     ← try approach 3 (if 2 failed)
+```
+
+**Key insight:** When you have a working feature branch, create experiment branches FROM that feature branch, not from main.
+
+### Workflow
+
+```bash
+# 1. You're on a working feature branch
+git checkout feature/user-auth
+
+# 2. Before experimenting - CHECK PREVIOUS ATTEMPTS
+cat .experiments/user-auth.md  # See what was already tried
+
+# 3. Create experiment branch FROM current branch
+git checkout -b experiment/oauth-google
+
+# 4. Work on the experiment
+# ... make changes, commits ...
+
+# 5a. If experiment succeeds:
+git checkout feature/user-auth
+git merge experiment/oauth-google
+git branch -d experiment/oauth-google
+# Update experiments log with success
+
+# 5b. If experiment fails - CLEAN ROLLBACK:
+# First, document WHY it failed
+echo "## experiment/oauth-google - FAILED" >> .experiments/user-auth.md
+echo "Date: $(date)" >> .experiments/user-auth.md
+echo "Idea: Use Google OAuth for authentication" >> .experiments/user-auth.md
+echo "Why failed: Rate limits too restrictive for our use case" >> .experiments/user-auth.md
+echo "" >> .experiments/user-auth.md
+
+# Then delete the branch
+git checkout feature/user-auth
+git branch -D experiment/oauth-google
+
+# Start next experiment
+git checkout -b experiment/oauth-github
+```
+
+### Experiment Tracking
+
+Create `.experiments/` directory in project root to track failed experiments:
+
+```
+.experiments/
+├── user-auth.md           ← experiments for user-auth feature
+├── payment-integration.md ← experiments for payments
+└── database-schema.md     ← experiments for DB changes
+```
+
+**Template for experiment log:**
+
+```markdown
+# Experiments: [Feature Name]
+
+## experiment/approach-name - STATUS
+- **Date:** YYYY-MM-DD
+- **Idea:** Brief description of the approach
+- **Why failed/succeeded:** Explanation
+- **Lessons learned:** What to avoid or remember
+
+---
+```
+
+### Before Starting New Experiment
+
+**ALWAYS check existing experiments first:**
+
+```bash
+# 1. List all branches to see current state
+git branch -a
+
+# 2. Check experiment history for this feature
+cat .experiments/<feature-name>.md
+
+# 3. See branch descriptions (if set)
+git config --get-regexp 'branch\..*\.description'
+
+# 4. Identify parent branch (where to return on failure)
+git log --oneline --graph -10
+```
+
+### Branch Naming Conventions
+
+| Prefix | Purpose | Example |
+|--------|---------|----------|
+| `experiment/` | Testing new approaches | `experiment/new-auth-flow` |
+| `feature/` | Confirmed new features | `feature/user-profile` |
+| `fix/` | Bug fixes | `fix/login-redirect` |
+| `refactor/` | Code restructuring | `refactor/api-cleanup` |
+| `chore/` | Maintenance tasks | `chore/update-deps` |
+
+### Benefits
+
+1. **No cognitive load** - Don't track what was changed
+2. **Zero risk** - Parent branch stays clean
+3. **Easy rollback** - Delete branch = complete undo
+4. **Parallel experiments** - Multiple branches for different approaches
+5. **Clean history** - Failed experiments don't pollute stable branches
+6. **Documented failures** - Know what was tried and why it failed
+7. **No repeated mistakes** - Check history before trying same approach
+
+### When to Create a New Branch
+
+- Trying a new library or approach
+- Major refactoring
+- Experimental feature implementation
+- Any work where rollback might be needed
+- When unsure if the approach will work
+- **Upgrading or changing existing working code**
+
+### Quick Decision
+
+```
+Is this work experimental or risky?
+│
+├─ YES → 1. Check .experiments/ for previous attempts
+│        2. Create new branch from CURRENT branch
+│           git checkout -b experiment/description
+│        3. If fails: document reason, delete branch
+│
+└─ NO  → Continue on current branch (small safe changes)
+```
+
+### Git Commands Reference
+
+```bash
+# See all branches and current position
+git branch -a
+
+# Create experiment from current branch
+git checkout -b experiment/name
+
+# Return to parent branch after failure
+git checkout <parent-branch>
+
+# Force delete failed experiment
+git branch -D experiment/name
+
+# See branch hierarchy
+git log --oneline --graph --all -20
+
+# Set branch description (optional)
+git config branch.experiment/name.description "Testing X approach"
+```
+
 ## Key Rules
 
 1. **Never commit** `.a0proj/memory/*` files

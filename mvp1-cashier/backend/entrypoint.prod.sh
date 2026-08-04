@@ -145,17 +145,81 @@ except Exception as e:
     fi
 }
 
-# Function to run migrations
+# Function to run migrations with timeout and error handling
 run_migrations() {
     echo "📦 Running database migrations..."
+    echo "   Started at: $(date '+%Y-%m-%d %H:%M:%S')"
     
     # Check if alembic directory exists
-    if [ -d "alembic" ]; then
-        # Run alembic migrations
-        alembic upgrade head
-        echo "✅ Migrations completed!"
-    else
+    if [ ! -d "alembic" ]; then
         echo "❌ ERROR: No alembic directory found"
+        echo "   Expected location: $(pwd)/alembic"
+        exit 1
+    fi
+    
+    # Check if alembic.ini exists
+    if [ ! -f "alembic.ini" ]; then
+        echo "❌ ERROR: No alembic.ini configuration file found"
+        exit 1
+    fi
+    
+    echo "   Alembic directory: $(pwd)/alembic"
+    echo "   Database URL: ${DATABASE_URL%%@*}@***" # Log URL without password
+    
+    # Get current migration status
+    echo "   Checking current migration status..."
+    current_revision=$(timeout 30 alembic current 2>/dev/null || echo "UNKNOWN")
+    echo "   Current revision: ${current_revision:-none}"
+    
+    # Run migrations with 60 second timeout
+    echo "   Applying migrations (timeout: 60s)..."
+    
+    migration_output=$(mktemp)
+    migration_start=$(date +%s)
+    
+    if timeout 60 alembic upgrade head > "$migration_output" 2>&1; then
+        migration_end=$(date +%s)
+        migration_duration=$((migration_end - migration_start))
+        
+        echo "   ✅ Migrations completed successfully in ${migration_duration}s"
+        
+        # Show migration output if any
+        if [ -s "$migration_output" ]; then
+            echo "   Migration output:"
+            sed 's/^/      /' "$migration_output"
+        fi
+        
+        # Verify final state
+        final_revision=$(timeout 30 alembic current 2>/dev/null || echo "UNKNOWN")
+        echo "   Final revision: ${final_revision:-none}"
+        
+        rm -f "$migration_output"
+        echo "✅ Database migrations completed!"
+    else
+        exit_code=$?
+        migration_end=$(date +%s)
+        migration_duration=$((migration_end - migration_start))
+        
+        echo ""
+        echo "❌ CRITICAL ERROR: Database migration failed!"
+        echo "   Exit code: $exit_code"
+        echo "   Duration: ${migration_duration}s"
+        
+        if [ $exit_code -eq 124 ]; then
+            echo "   Reason: Migration timed out after 60 seconds"
+            echo "   This may indicate:"
+            echo "     - Database connection issues"
+            echo "     - Long-running migration"
+            echo "     - Database lock contention"
+        else
+            echo "   Migration error output:"
+            sed 's/^/      /' "$migration_output"
+        fi
+        
+        rm -f "$migration_output"
+        echo ""
+        echo "   ⚠️  Application will NOT start due to migration failure"
+        echo "   Please check database connectivity and migration scripts"
         exit 1
     fi
 }
@@ -247,6 +311,7 @@ echo ""
 echo "====================================================="
 echo "🚀 Starting production uvicorn server..."
 echo "   Environment: $ENVIRONMENT"
+echo "   Port: ${PORT:-8080}"
 echo "   Database: Connected"
 echo "   Migrations: Up to date"
 echo "====================================================="
@@ -254,14 +319,16 @@ echo ""
 
 # Production server configuration:
 # - No auto-reload (use --reload in development only)
-# - Proper worker configuration should be handled by process manager (systemd, supervisor, etc.)
+# - PORT is set by Cloud Run (default 8080)
 # - Use --proxy-headers for reverse proxy setups
+# - timeout-keep-alive set higher than Cloud Run's 60s timeout
 # - Log level can be controlled via LOG_LEVEL env var
 
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port 8000 \
+    --port ${PORT:-8080} \
     --proxy-headers \
     --forwarded-allow-ips='*' \
+    --timeout-keep-alive 65 \
     --log-level ${LOG_LEVEL:-info} \
     "$@"
