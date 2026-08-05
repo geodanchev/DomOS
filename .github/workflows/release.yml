@@ -23,8 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GIT_PAT_WORKFLOW }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,7 +45,7 @@ jobs:
       
       - name: Run Semantic Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_PAT_WORKFLOW }}
           GIT_AUTHOR_NAME: semantic-release-bot
           GIT_AUTHOR_EMAIL: semantic-release-bot@users.noreply.github.com
           GIT_COMMITTER_NAME: semantic-release-bot
