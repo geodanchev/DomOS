@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/geodanchev/DomOS/compare/v1.1.0...v1.1.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **frontend:** Fix nginx config structure for Cloud Run ([a7f1ae6](https://github.com/geodanchev/DomOS/commit/a7f1ae6d59e06d4d0801ebca9c6bd88a427b0b67))
+
 # [1.1.0](https://github.com/geodanchev/DomOS/compare/v1.0.0...v1.1.0) (2026-08-08)
 
 
