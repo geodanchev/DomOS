@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/geodanchev/DomOS/compare/v1.0.0...v1.1.0) (2026-08-08)
+
+
+### Features
+
+* **scheduler:** Add Cloud Scheduler support for monthly obligations ([bb79efa](https://github.com/geodanchev/DomOS/commit/bb79efa41570a763ca0f87e19a520c865605897c))
+
 # 1.0.0 (2026-08-05)
 
 

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     
     # App info
     APP_NAME: str = "DomOS Cashier MVP"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.1.0"
     GIT_COMMIT_SHA: str = ""  # Injected at build time
     DEBUG: bool = True
     
