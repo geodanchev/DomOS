@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # Cloud SQL instance connection name (project:region:instance)
     CLOUD_SQL_CONNECTION_NAME: str | None = None
     
+    # GCP Project identifiers for Cloud Scheduler authentication
+    GCP_PROJECT_ID: str = "bionic-region-502615-h8"
+    GCP_PROJECT_NUMBER: str = "985395022174"
+    
+    # Backend URL for OIDC audience validation
+    BACKEND_URL: str = "https://domos-cashier-backend-qoagunxmwa-ey.a.run.app"
+    
     @field_validator('SECRET_KEY')
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
