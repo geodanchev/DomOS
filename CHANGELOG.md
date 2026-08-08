@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/geodanchev/DomOS/compare/v1.1.1...v1.1.2) (2026-08-08)
+
+
+### Bug Fixes
+
+* **deps:** Add requests library required by google-auth ([9c863d2](https://github.com/geodanchev/DomOS/commit/9c863d2a6a7bda4dd0882a3799d4a3e433ca2000))
+
 ## [1.1.1](https://github.com/geodanchev/DomOS/compare/v1.1.0...v1.1.1) (2026-08-08)
 
 
