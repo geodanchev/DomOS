@@ -23,6 +23,7 @@ bcrypt>=4.2.0
 
 # Google Cloud authentication (for Cloud Scheduler OIDC)
 google-auth>=2.28.0
+requests>=2.31.0  # Required by google-auth for transport
 
 # Scheduler
 apscheduler>=3.10.4
